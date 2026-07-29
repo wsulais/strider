@@ -1,0 +1,62 @@
+# The namespace crate. Owns no format: it vendors the adapters and re-exports them.
+#
+# Why a facade at all, rather than consumers depending on `strider-io-copc` directly —
+# there are two reasons and only the second is about convenience:
+#
+#   1. It is where the **default set** is declared. A consumer writing
+#      `strider-io = "0"` gets a build that works on every desktop platform and in a
+#      browser, without knowing which adapters exist. That promise has to live somewhere,
+#      and it cannot live in an adapter, which knows only itself.
+#   2. One dependency line instead of one per format.
+#
+# What it must NOT become is a place where behaviour lives. Anything that does something
+# belongs in a sibling adapter; this crate re-exports and nothing else, which is what
+# keeps "which crate is this bug in?" answerable.
+[package]
+name = "strider-io"
+version = "0.0.0"
+publish = false
+edition.workspace = true
+rust-version.workspace = true
+# Library crate — permissive per [[RFC-0001:C-LICENSE]] (1).
+license.workspace = true
+repository.workspace = true
+description = "Source adapters for point cloud formats: the namespace crate"
+
+[features]
+# The cross-platform desktop set, and deliberately the same set a browser target can
+# build. COPC is the only adapter that exists; when Parquet, E57 and LAS arrive, whether
+# each joins `default` is decided by one question — does it build for
+# wasm32-unknown-unknown with no filesystem — because `default` that does not satisfy
+# [[RFC-0004:C-PORT-GATE]] 1 would make the portability gate depend on which features a
+# caller happened to pick.
+default = ["copc"]
+
+copc = ["dep:strider-io-copc"]
+
+# Vendor-specific acceleration goes here and nowhere else, as a feature enabling a sibling
+# crate — never as a flag on an adapter, and never in `default`:
+#
+#     copc-cuda = ["copc", "dep:strider-io-copc-cuda"]
+#
+# Two rules that are not obvious and are worth writing down before the first one lands.
+# A vendor crate MUST be additive: enabling it changes throughput and never results, so a
+# consumer who cannot run it is not reading different numbers — [[RFC-0003:C-COMMIT]] is the
+# neighbouring concern, since a committed run's figures have to survive being questioned and
+# "it was computed on the other kind of card" is not an answer. And it MUST stay out of
+# `default`, because a default carrying a CUDA dependency makes the portability gate
+# unbuildable for everyone without one.
+#
+# CAUTION, measured rather than assumed: Cargo unifies features across workspace members
+# in a single invocation, so if any member enables `copc-cuda`, then
+# `cargo build --workspace` hands *every* member the CUDA-enabled build — and
+# `cargo tree -p <member>` does not show it. Vendor features must therefore be verified
+# per crate (`cargo build -p strider-io --no-default-features`, and an explicit portable-set
+# job), not by a workspace-wide build.
+
+[dependencies]
+strider-core = { path = "../strider-core" }
+strider-io-copc = { path = "copc", optional = true }
+
+[lints]
+workspace = true

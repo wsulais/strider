@@ -1,0 +1,43 @@
+# One format, one crate. The namespace crate `strider-io` re-exports this behind a
+# feature; nothing depends on it directly except that facade and the tests.
+[package]
+name = "strider-io-copc"
+version = "0.0.0"
+publish = false
+edition.workspace = true
+rust-version.workspace = true
+# Library crate — permissive per [[RFC-0001:C-LICENSE]] (1).
+license.workspace = true
+repository.workspace = true
+description = "COPC source adapter: offset-and-length reads, Arrow batches"
+
+[dependencies]
+# The retrieval port and the shared geometry. Not defined here: an E57 adapter is bound
+# by [[RFC-0004:C-HOST]] 2 identically and must not inherit it from COPC.
+strider-core = { path = "../../strider-core" }
+
+# The representation at every operator boundary ([[RFC-0002:C-EXEC]] 3).
+arrow = { workspace = true, features = ["ffi"] }
+thiserror = { workspace = true }
+
+# The coordinate encoding and its vocabulary, taken from the reference implementation
+# rather than restated ([[RFC-0005:C-CRS]] 4, [[ADR-0017]]). 0.8 is the release that
+# requires arrow-schema ^58, which is why the workspace is on Arrow 58.
+geoarrow-schema = "0.8"
+
+# LASzip decompression. Apache-2.0, so within [[RFC-0001:C-LICENSE]] 4.
+#
+# Taken for the arithmetic coder only, and used through `laz::record`, which decodes a
+# point record from a plain byte reader. The crate's higher-level `LasZipDecompressor` is
+# deliberately NOT used: it reads a chunk table by seeking in the file, and
+# [[RFC-0004:C-HOST]] 2 forbids reading against a seekable handle. A COPC hierarchy entry
+# already names the chunk's offset and length, so the chunk table is not needed.
+#
+# `default-features = false` keeps rayon out: parallelism comes from the caller
+# ([[RFC-0004:C-HOST]] 3), and a crate that spawns its own would breach it invisibly.
+# There is no feature here that would turn it back on — an accelerated decoder would be a
+# sibling crate behind a `strider-io` feature, not a flag on this one.
+laz = { version = "0.13", default-features = false }
+
+[lints]
+workspace = true

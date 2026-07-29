@@ -3,7 +3,12 @@ resolver = "3"
 members = [
     # Library crates — Apache-2.0 OR MIT ([[RFC-0001:C-LICENSE]] 1).
     "crates/strider-core",
-    # "crates/strider-io",
+    # Namespace crate plus its adapters. Nested *directories*, flat *membership* — Cargo
+    # has no nested workspaces (a member declaring `[workspace]` is
+    # "multiple workspace roots found in the same workspace", and `exclude` does not help
+    # once a member path-depends on it), so the hierarchy is expressed by paths and names.
+    "crates/strider-io",
+    "crates/strider-io/copc",
     # "crates/strider-algo",
     # "crates/strider-view",
     # Application — AGPL-3.0-or-later ([[RFC-0001:C-LICENSE]] 2). Declares its own

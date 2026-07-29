@@ -3,9 +3,15 @@
 
 //! Spatial access and the out-of-core execution model ([[RFC-0001]]).
 //!
-//! Nothing is implemented yet — this crate exists so the workspace, the licence
-//! split ([[RFC-0001:C-LICENSE]]), and the portability gate
-//! ([[RFC-0004:C-PORT-GATE]]) are real and checkable before any code lands.
+//! What lives here is what every layer above must agree on: the **retrieval port**, and
+//! the geometry a partition and a query are both expressed in. A source adapter, an
+//! operator and the renderer all speak these types; none of them owns them.
+//!
+//! The retrieval port is here rather than in a source adapter for a reason worth stating,
+//! because the tempting placement is the other one. [[RFC-0004:C-HOST]] 2 is a rule about
+//! *hosts*, not about COPC — an E57 or Parquet adapter is bound by the identical
+//! obligation and must not inherit it by depending on the COPC crate. Putting the port in
+//! the model keeps adapters siblings.
 //!
 //! Two constraints shape every signature added here:
 //!
@@ -17,3 +23,9 @@
 //!   membership is not an exception to that: it is derived from the stage's own
 //!   partition bounds together with a point's position, so the column carrying it
 //!   is a cache of that derivation ([[RFC-0002:C-HALO]] 1, [[RFC-0002:C-EXEC]] 4).
+
+pub mod geom;
+pub mod retrieval;
+
+pub use geom::Aabb;
+pub use retrieval::{Delivered, Need, Range, Step};
