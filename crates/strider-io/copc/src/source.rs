@@ -279,6 +279,13 @@ impl Source {
         self.hierarchy.node(key)
     }
 
+    /// The children of `key` the index has read. The traversal primitive: descending with
+    /// this touches only keys the file recorded, where synthesising eight child keys and
+    /// asking about each touches mostly cells that do not exist.
+    pub fn children(&self, key: VoxelKey) -> impl Iterator<Item = VoxelKey> + '_ {
+        self.hierarchy.children(key)
+    }
+
     /// A cheap, shareable snapshot of everything decoding needs.
     ///
     /// This split exists because of a bug that was invisible until a viewport had holes in
