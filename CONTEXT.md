@@ -91,6 +91,22 @@ industrial scanning can be added without reshaping it.
 - **Core point** — a point belonging to the partition itself rather than its halo.
   Operators read both and emit only core points, which is what makes a partitioned
   run's point count equal a whole-dataset run's (`RFC-0002:C-HALO` 1).
+- **Pipeline halo width** — what the *planner* must borrow for a chain of
+  neighbourhood operators, as distinct from the width each operator declares for
+  itself. Over a single borrowed halo it is the **sum** of the declared widths, not
+  the largest: each operator spends a border of validity, so the exact region shrinks
+  by one width per operator (`RFC-0002:C-COMPOSITION` 3). Computable before anything
+  runs, because `C-EXEC` 1 already requires every width to be declared — which is why
+  it is a *planner* obligation: a component seeing one operator at a time could not
+  compute it.
+- **Halo exchange** — the alternative to borrowing the sum: give each operator its own
+  declared width and re-borrow between operators. Exact, and costs a barrier — every
+  partition must finish an operator before any starts the next — plus the intermediate
+  state that barrier implies. Named for the scientific-computing operation it is. One of
+  the two arrangements `RFC-0002:C-COMPOSITION` 2 permits.
+- **Dependent chain** — operators where each after the first reads an attribute the
+  previous one *derived*. Only a dependent chain needs the composed width; reading only
+  pass-through attributes does not compose (`RFC-0002:C-COMPOSITION` 1).
 - **Halo removal** — dropping a partition's halo points. Because core points precede
   halo points within a batch, this is a reduction to a *range*: the retained attributes
   keep the same memory rather than being written again (`RFC-0002:C-HALO` 5). Selecting

@@ -17,7 +17,10 @@ rather than slow ones.
 1. Halo points supplied to satisfy an operator's declared halo width (C-EXEC 1) MUST be distinguishable
    from the partition's own points by a dedicated boolean attribute in the batch.
    - An operator MAY read halo points.
-   - An operator MUST NOT emit halo points to its output.
+   - An operator MUST NOT relabel a halo point as a core point.
+   - An operator MAY carry halo points to its output, still marked as halo, only where that output is
+     consumed by another operator of the same pipeline declaring a nonzero halo width. Otherwise its output
+     MUST contain no halo points.
    - The halo attribute MUST NOT be present in a pipeline's final output.
    - Within a batch, every core point MUST precede every halo point.
 2. A partitioning that carries a nonzero halo MUST NOT be treated as a disjoint partitioning.
@@ -31,8 +34,12 @@ rather than slow ones.
      MUST declare its output approximate under C-APPROX 1.
 4. Conformance to (3) MUST be verified, for each operator declaring a nonzero halo width, by comparing
    output computed over multiple partitions against output computed with the input in a single partition.
-   - Where the operator does not declare its output approximate, the two MUST be identical.
-   - Where it does, the divergence MUST be bounded and that bound MUST be verified.
+   - Where the operator does not declare its output approximate, the two MUST agree exactly under the
+     accumulation regime the operator uses: bit-identically where its reductions accumulate associatively
+     ([[RFC-0003:C-COMMIT]] 5), and otherwise within the declared accumulation quantum
+     ([[RFC-0003:C-COMMIT]] 7). A difference beyond that is evidence the declared width is too small.
+   - Where it does declare its output approximate, the divergence MUST be bounded and that bound MUST be
+     verified.
 5. Removing a halo MUST reduce the batch to the contiguous range of its core points, without rewriting the
    attributes it retains (C-MATERIALISATION 2).
    - A stage that removes a halo MUST first verify that (1)'s ordering holds of the batch it was given, and
@@ -91,4 +98,11 @@ The comparative case — why an in-batch ordering contract is preferable to a ro
 core and halo points as separate batches — is argued in the accompanying architecture decision. What
 belongs here is only the consequence: the ordering is a semantic contract that a plain Arrow batch cannot
 express in its schema (C-EXEC 3), so (5)'s verification is the only thing standing between it and a silent
-wrong answer."""
+wrong answer.
+
+(1)'s third bullet is narrower than it looks and the narrowness is the point. The rule that prevents
+duplication is *never relabel*: a point borrowed by four partitions must not become four core points. What
+does not follow is that a halo may never reach an operator's output at all — a chain of neighbourhood
+operators needs the halo to survive between them, and C-COMPOSITION governs how wide it must be. Carrying
+halo points forward while they are still marked as halo duplicates nothing, because the halo is removed
+before any operation that depends on disjointness (2) and before the pipeline's output (fourth bullet)."""

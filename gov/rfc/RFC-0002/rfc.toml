@@ -24,6 +24,7 @@ title = "Specification"
 clauses = [
     "clauses/C-EXEC.toml",
     "clauses/C-HALO.toml",
+    "clauses/C-COMPOSITION.toml",
     "clauses/C-MATERIALISATION.toml",
     "clauses/C-MEMORY.toml",
     "clauses/C-PROJECTION.toml",
