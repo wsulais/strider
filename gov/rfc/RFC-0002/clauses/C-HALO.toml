@@ -32,6 +32,14 @@ rather than slow ones.
    - Where the operator's neighbourhood is defined by a count of neighbours rather than a distance, the
      declared width MUST bound that neighbourhood for the densities the operator accepts, or the operator
      MUST declare its output approximate under C-APPROX 1.
+   - Where the operator's neighbourhood is **mediated by a summary** — a later pass reads a gridded summary an
+     earlier pass built, rather than reading points directly — the operator MUST declare the summary's
+     resolution and the **reach** of that later pass, as a count of summary cells. The planner MUST then supply
+     a halo width of at least *(reach + 1)* multiplied by the resolution.
+   - The planner MAY reduce that to *reach* multiplied by the resolution only where it has established that
+     every partition boundary coincides with a summary cell boundary. Divisibility of the partition extent by
+     the resolution MUST NOT be treated as establishing it: a grid may divide the extent exactly and still
+     straddle every boundary if its origin is offset.
 4. Conformance to (3) MUST be verified, for each operator declaring a nonzero halo width, by comparing
    output computed over multiple partitions against output computed with the input in a single partition.
    - Where the operator does not declare its output approximate, the two MUST agree exactly under the
@@ -51,6 +59,13 @@ rather than slow ones.
    together with a check that the point count after removal equals the batch's core point count.
    - The count check is not redundant: memory identity holds for a range taken at the wrong offset or
      length, so it cannot detect a range that is shared but wrong.
+7. A stage that carries halo points to its output under (1) MUST declare that it does, as a property of the
+   stage (C-EXEC 4).
+   - A planner MUST reject a pipeline in which a stage declaring carry-forward has a consumer that declares a
+     zero halo width, and MUST reject one in which the last stage declaring carry-forward is not followed by a
+     removal under (5). Each rejection MUST name the stage.
+   - Conformance MUST be verified by presenting a pipeline of each rejected shape and confirming the
+     rejection, not only by presenting conformant pipelines and observing that they run.
 
 #### Rationale
 
@@ -76,6 +91,38 @@ it to be *right*, which is a different claim and the one that can be wrong while
 work. A k-nearest-neighbour radius depends on local density, so an operator cannot always bound it in
 advance — hence the escape to approximation rather than a prohibition.
 
+(3)'s summary bullets exist because a two-pass operator's reach is not visible in the neighbourhood its second
+pass appears to use. Reading a gridded summary looks like reading one cell, and needs points from beyond the
+partition for two separate reasons: a cell overlapping the partition boundary is incomplete without the
+neighbouring partition's points, and any cell the pass reads beyond its own must exist at all. Both are
+satisfied by a *point* halo, which is why this needs no second kind of halo and no second unit — the reach
+converts to a distance through the resolution and stays commensurable with every other declared width,
+including the sum C-COMPOSITION 3 takes.
+
+The split of responsibility is deliberate and is what the two bullets encode. *Reach* and *resolution* are the
+operator's: they describe what its own second pass does. The extra cell is the *partitioning's*, because
+whether a cell straddles a boundary is a fact about where boundaries fall — which an operator has no business
+knowing. So the operator declares two numbers and the planner computes the width.
+
+The extra cell is a MUST and its removal a MAY because of what was measured. The straddle term is a matter of
+alignment, and it is *not* divisibility: a grid whose resolution divided the partition extent exactly still
+needed half a cell of halo when its origin was offset by half a cell, and six tenths when offset by four
+tenths. A rule keyed on divisibility would therefore supply too little, silently, in a configuration that
+looks aligned. The safe bound is the full cell — an overhang is strictly less than one cell wherever
+boundaries do not coincide — and the reduction is available only against the predicate that actually holds.
+
+(7) closes what (1)'s third bullet opened, and it has to be a *declaration* to be closable at all. A flat
+prohibition on emitting halo points was checkable by looking at outputs. Permitting a carry-forward moved the
+condition onto the relationship between stages — and whether a stage carries a halo forward is a fact about
+its output data, while whether its consumer wants one is a fact about a declaration. Checking a conjunction of
+the two would mean inspecting data to validate a plan. Requiring the carrying stage to *declare* it puts both
+halves in the same register, so a planner can decide the question on the pipeline graph before anything runs,
+which is where C-EXEC 2 already decides everything else of this kind.
+
+(7)'s last bullet is there because this obligation is a rejection, and a rejection is the one kind of
+requirement that a passing test suite can silently fail to exercise. Conformant pipelines running proves
+nothing about a planner that never rejects anything.
+
 (4) is the verification that cannot be faked, and the identical-not-approximate requirement is stronger
 than it looks. It is tempting to treat small boundary differences as an acceptable tolerance; they are
 not. A sufficient halo makes partitioning exactly lossless, so a difference is evidence the declared width
@@ -92,9 +139,6 @@ points, and a plain Arrow batch cannot express its own row order in its schema (
 instead is what stops an implementation recovering from a violation by paying the cost (5) was written to
 remove, and thereby concealing a defect in whatever produced the batch.
 
-(1)'s third bullet is narrower than it looks and the narrowness is the point. The rule that prevents
-duplication is *never relabel*: a point borrowed by four partitions must not become four core points. What
-does not follow is that a halo may never reach an operator's output at all — a chain of neighbourhood
-operators needs the halo to survive between them, and C-COMPOSITION governs how wide it must be. Carrying
-halo points forward while they are still marked as halo duplicates nothing, because the halo is removed
-before any operation that depends on disjointness (2) and before the pipeline's output (fourth bullet)."""
+(1)'s third bullet is what makes a chain of neighbourhood operators possible at all: the halo has to survive
+between them, and C-COMPOSITION governs how wide it must be. The condition on it, and the declaration (7)
+requires of a stage that uses it, are what keep the narrower rule from being a weaker one."""

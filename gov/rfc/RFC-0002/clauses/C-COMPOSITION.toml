@@ -25,8 +25,12 @@ argued in the accompanying architecture decision; the obligation is here, and it
      operators, from partition outputs that are all complete.
    - Supplying each operator its own declared width *without* re-supplying between them MUST NOT be used. It
      satisfies every operator's declaration and is the arrangement this clause exists to forbid.
-3. The **composed halo width** of a dependent chain is the sum of the halo widths its operators declare
-   (C-EXEC 1). A planner MUST compute it before any operator in the chain executes.
+3. The **composed halo width** of a dependent chain is the sum of its operators' halo widths, taking for each
+   operator the width C-HALO 3 makes sufficient — which for a summary-mediated operator the planner derives
+   rather than reads. A planner MUST compute it before any operator in the chain executes.
+   - The partition-alignment term C-HALO 3 adds for a summary-mediated operator MUST be counted once for the
+     chain, not once per operator. It is a property of where partition boundaries fall rather than of any
+     operator, so counting it per operator would over-supply and could turn (4) into a spurious rejection.
    - Where a chain is split into segments, each evaluated over one supplied halo with an exchange between
      segments, the width supplied to a segment MUST be at least that segment's sum.
    - Where an operator's neighbourhood is defined by a count of neighbours rather than a distance, its
@@ -66,6 +70,11 @@ streaming batches from one into the next, changes the scheduling and not the ari
 a prohibition a reader has to derive is one an implementation can miss. Both permitted arrangements are exact,
 and which is cheaper depends on the pipeline, so the clause requires the choice to be made rather than making
 it.
+
+(3)'s first bullet is there because the quantities being summed have different owners. An operator's reach is
+its own and composes along the chain; the alignment term belongs to the partitioning, and a chain crosses the
+same boundaries however many operators it contains. Counting it once is what keeps the sum a statement about
+reach rather than about arithmetic.
 
 (3)'s segment bullet exists because the two arrangements in (2) are endpoints rather than alternatives: a
 four-operator chain may be split into two pairs with one exchange between them, and that is often the

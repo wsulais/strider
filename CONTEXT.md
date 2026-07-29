@@ -75,9 +75,12 @@ industrial scanning can be added without reshaping it.
 - **Pass** — one traversal of the input by an operator. Two-pass operators (build a
   summary, then apply it) are the shape of morphological ground filters and of
   height above ground.
-- **Summary** — the small, bounded result of reducing a whole input: a
-  minimum-elevation raster, a histogram, a decimated index. Bounded independently
-  of input size, which is what makes reduce-then-apply admissible out-of-core.
+- **Summary** — the result of reducing an input: a minimum-elevation raster, a
+  histogram, a decimated index. *Not* automatically small: whether its size is bounded
+  independently of the input is the question `RFC-0002:C-MEMORY` 1 makes an operator
+  answer, and a gridded summary over a whole extent fails it. Reduce-then-apply is
+  admissible out-of-core only where the summary is bounded, which for a grid means
+  built per partition (`C-MEMORY` 6).
 
 ## Neighbourhoods
 - **Halo** — points supplied to a partition from *outside* its bounds, so a
@@ -104,6 +107,23 @@ industrial scanning can be added without reshaping it.
   partition must finish an operator before any starts the next — plus the intermediate
   state that barrier implies. Named for the scientific-computing operation it is. One of
   the two arrangements `RFC-0002:C-COMPOSITION` 2 permits.
+- **Declarable summary size** — a summary size bounded by a function of the partition
+  size, the halo width and the summary's own resolution, and of nothing about the data.
+  For a grid it is the number of cells the partition and its halo **span**, not the number
+  occupied: occupancy rises with density, the span does not (`RFC-0002:C-MEMORY` 1). A
+  size bounded only by the dataset's *extent* is not declarable — extent is a dataset
+  property, and a fully occupied grid grows with it. A whole-extent summary therefore has
+  no declarable size and must be built per partition (`C-MEMORY` 6).
+- **Summary-mediated neighbourhood** — where a later pass reads a gridded summary an
+  earlier pass built, rather than reading points. Its halo is still a *point* halo: reach
+  in cells times the resolution, plus one cell where the grid does not divide the partition
+  extent (`RFC-0002:C-HALO` 3). Needs no second unit, which is what keeps it commensurable
+  with `C-COMPOSITION` 3's sum.
+- **Grid alignment** — every partition boundary coinciding with a summary cell boundary.
+  Measured to remove the straddle term entirely, and **not** the same as the resolution
+  dividing the partition extent: a grid can divide it exactly and still straddle every
+  boundary if its origin is offset. Only coincidence permits the reduced halo
+  (`RFC-0002:C-HALO` 3).
 - **Dependent chain** — operators where each after the first reads an attribute the
   previous one *derived*. Only a dependent chain needs the composed width; reading only
   pass-through attributes does not compose (`RFC-0002:C-COMPOSITION` 1).
