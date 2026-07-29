@@ -138,8 +138,5 @@ pub struct Snapshot {
     pub generation: u64,
     pub view: View,
     pub visible: Vec<VisiblePartition>,
-    pub anchors: Vec<Anchor>,
-    /// `Some` only once the host has separately scheduled a pipeline and it finished
-    /// ([[RFC-0006:C-RENDER]] 3).
     pub pipeline: Option<PipelineResultRef>,
 }

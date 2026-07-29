@@ -41,10 +41,7 @@ mod raster;
 mod snapshot;
 mod state;
 
-pub use raster::{
-    AnchorVerdict, DrawnAnchor, Raster, UploadToken, Uploads, Vertex, CHANNELS, HIDE, KEEP,
-    RECLASS,
-};
+pub use raster::{UploadToken, Uploads, Vertex, CHANNELS, HIDE, KEEP, RECLASS};
 pub use snapshot::{
     Anchor, EditAction, EditDigest, EditRef, Lod, PartitionId, PipelineResultRef, Snapshot, View,
     VisiblePartition,

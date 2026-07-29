@@ -345,11 +345,13 @@ struct Rates {
     last_swaps: u32,
     /// Where a frame's time actually goes, in microseconds, smoothed the same way `frame_ms` is.
     ///
-    /// Split because "80 fps" names no cause. The three phases have entirely different
-    /// remedies: host extract is octree work on the CPU, draw is submission, and readback is a
-    /// synchronous stall on the GPU plus a memcpy the size of the viewport — and only the last
-    /// of those is a consequence of rendering offscreen rather than presenting.
+    /// Split because "80 fps" names no cause. The phases have entirely different remedies:
+    /// host extract is octree work on the CPU, upload is re-filling vertex buffers, draw is
+    /// submission, and readback is a synchronous stall on the GPU plus a memcpy the size of
+    /// the viewport — and only the last of those is a consequence of rendering offscreen
+    /// rather than presenting.
     extract_us: f32,
+    upload_us: f32,
     draw_us: f32,
     readback_us: f32,
     /// Bytes copied out of the GPU on the last readback.
@@ -385,6 +387,7 @@ impl Default for Rates {
             dirty: true,
             null_paints: 0,
             extract_us: 0.0,
+            upload_us: 0.0,
             draw_us: 0.0,
             readback_us: 0.0,
             readback_bytes: 0,
@@ -693,10 +696,9 @@ impl ffi::Editor {
         // The borrow is released before the property is written: writing it emits a
         // change signal that QML handles synchronously, and a handler calling back into an
         // invokable would hit a `RefCell` double borrow.
-        let t_extract = std::time::Instant::now();
+        // `run_frame` times its own phases: extract and upload are measured inside, next to
+        // the code they name, rather than one timer wrapped around the whole call.
         let rows = guarded("tick", || Some(run_frame()));
-        let extract_us = t_extract.elapsed().as_secs_f32() * 1e6;
-        STATE.with(|s| Rates::blend(&mut s.borrow_mut().rates.extract_us, extract_us));
         let dirty = STATE.with(|s| {
             let mut s = s.borrow_mut();
             // Swaps are counted on whichever thread Qt swapped on; folded in here, on the
@@ -1125,7 +1127,9 @@ fn run_frame() -> Vec<String> {
             return vec!["source\tnot open".into()];
         };
         host.log.clear();
+        let t_extract = std::time::Instant::now();
         host.tick();
+        Rates::blend(&mut s.rates.extract_us, t_extract.elapsed().as_secs_f32() * 1e6);
         s.frames += 1;
 
         let draws = host
@@ -1134,11 +1138,12 @@ fn run_frame() -> Vec<String> {
             .map(|f| f.draws.to_vec())
             .unwrap_or_default();
         let Some(gpu) = s.gpu.as_mut() else {
-            return readouts(host, s.frames, 0, 0, label, s.rates.last, s.rates.frame_ms, s.rates.null_paints, s.rates.null_reason, s.rates.last_swaps, (s.rates.total_paints, s.rates.total_swaps), (s.rates.extract_us, s.rates.draw_us, s.rates.readback_us, s.rates.readback_bytes));
+            return readouts(host, s.frames, 0, 0, label, s.rates.last, s.rates.frame_ms, s.rates.null_paints, s.rates.null_reason, s.rates.last_swaps, (s.rates.total_paints, s.rates.total_swaps), (s.rates.extract_us, s.rates.upload_us, s.rates.draw_us, s.rates.readback_us, s.rates.readback_bytes));
         };
 
         // The uploads and evictions the policy layer's decisions imply. Drawing happens in
         // `strider_paint`, on Qt's paint call — this only makes sure the buffers exist.
+        let t_upload = std::time::Instant::now();
         for d in &draws {
             let key = (d.id.0, d.lod.0);
             let stale = match s.resident.get(&key) {
@@ -1181,6 +1186,7 @@ fn run_frame() -> Vec<String> {
             }
             live
         });
+        Rates::blend(&mut s.rates.upload_us, t_upload.elapsed().as_secs_f32() * 1e6);
 
         // Damage from the renderer's own side: an upload landing, an eviction, or a mask
         // rebuild all change what a frame looks like without anyone touching the camera.
@@ -1201,13 +1207,14 @@ fn run_frame() -> Vec<String> {
             s.rates.last_log = std::time::Instant::now();
             eprintln!(
                 "status      frame {} | paints/swaps {}/{} | {:.1} ms/paint | {} points | \
-                 extract {:.2} draw {:.2} readback {:.2} ms | copied {} kB | target {}",
+                 extract {:.2} upload {:.2} draw {:.2} readback {:.2} ms | copied {} kB | target {}",
                 s.frames,
                 s.rates.total_paints,
                 s.rates.total_swaps,
                 s.rates.frame_ms,
                 thousands(points),
                 s.rates.extract_us / 1000.0,
+                s.rates.upload_us / 1000.0,
                 s.rates.draw_us / 1000.0,
                 s.rates.readback_us / 1000.0,
                 s.rates.readback_bytes / 1024,
@@ -1218,7 +1225,7 @@ fn run_frame() -> Vec<String> {
                 },
             );
         }
-        readouts(host, s.frames, points, s.resident.len() as u64, label, s.rates.last, s.rates.frame_ms, s.rates.null_paints, s.rates.null_reason, s.rates.last_swaps, (s.rates.total_paints, s.rates.total_swaps), (s.rates.extract_us, s.rates.draw_us, s.rates.readback_us, s.rates.readback_bytes))
+        readouts(host, s.frames, points, s.resident.len() as u64, label, s.rates.last, s.rates.frame_ms, s.rates.null_paints, s.rates.null_reason, s.rates.last_swaps, (s.rates.total_paints, s.rates.total_swaps), (s.rates.extract_us, s.rates.upload_us, s.rates.draw_us, s.rates.readback_us, s.rates.readback_bytes))
     })
 }
 
@@ -1235,7 +1242,7 @@ fn readouts(
     reason: &str,
     swaps: u32,
     totals: (u64, u64),
-    phases: (f32, f32, f32, usize),
+    phases: (f32, f32, f32, f32, usize),
 ) -> Vec<String> {
     let st = host.renderer.stats();
     let row = |k: &str, v: String| format!("{k}\t{v}");
@@ -1256,22 +1263,23 @@ fn readouts(
             "paints / swaps total",
             format!("{} / {}", totals.0, totals.1),
         ),
-        // The three phases of a frame, so a frame rate has a cause attached to it.
+        // The phases of a frame, so a frame rate has a cause attached to it.
         row(
-            "extract / draw / readback",
+            "extract / upload / draw / readback",
             format!(
-                "{:.2} / {:.2} / {:.2} ms",
+                "{:.2} / {:.2} / {:.2} / {:.2} ms",
                 phases.0 / 1000.0,
                 phases.1 / 1000.0,
-                phases.2 / 1000.0
+                phases.2 / 1000.0,
+                phases.3 / 1000.0
             ),
         ),
         row(
             "readback size",
             format!(
                 "{} kB  ({:.0} MB/s at {:.0} fps)",
-                phases.3 / 1024,
-                phases.3 as f64 * swaps as f64 / 1_048_576.0,
+                phases.4 / 1024,
+                phases.4 as f64 * swaps as f64 / 1_048_576.0,
                 swaps
             ),
         ),

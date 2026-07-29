@@ -46,6 +46,15 @@ use strider_view::{Draw, Vertex};
 use std::collections::BTreeMap;
 use wgpu::util::DeviceExt;
 
+/// How many frames of GPU work may be in flight before a readback blocks on one of them.
+///
+/// The readback ring has `READBACK_LAG + 1` slots: one being written this frame, and
+/// `READBACK_LAG` others in flight. Reading the oldest means the GPU has had `READBACK_LAG`
+/// whole frames to finish it, so the wait is ~free in steady state — which is the point. A
+/// blocking read every frame turned `draw` into a lie: it "returned" in 0.1 ms because it
+/// only *submits*, and the readback absorbed all the real GPU time in its fence wait.
+const READBACK_LAG: usize = 2;
+
 /// One point as the device sees it. `strider_view::Vertex` cannot derive `Pod`, being in a
 /// crate with no dependencies, so the conversion happens once at upload.
 #[repr(C)]
@@ -321,6 +330,23 @@ pub struct Gpu {
     pub adapter_name: String,
     pub backend: String,
     colour_format: wgpu::TextureFormat,
+    /// A ring of `MAP_READ` staging buffers, one per frame in flight.
+    ///
+    /// One buffer per frame was the OOM: a fresh `MAP_READ` buffer every paint, with wgpu
+    /// freeing lazily, let the allocator run ahead of the frees. A ring is a different fix
+    /// for a different reason: with `READBACK_LAG + 1` buffers, the copy this frame writes
+    /// into one slot while the readback maps the slot copied `READBACK_LAG` frames ago. The
+    /// wait then overlaps the GPU's current work instead of serialising with it.
+    readback: Vec<wgpu::Buffer>,
+    /// The submission that wrote each ring slot, so a read can wait on exactly one old
+    /// submission instead of `wait_indefinitely` draining the whole queue.
+    readback_sub: Vec<Option<wgpu::SubmissionIndex>>,
+    /// Next ring slot to copy into.
+    readback_next: usize,
+    /// Size the ring was built for.
+    readback_size: (u32, u32),
+    /// The anchor quad buffer, cached because anchors do not move between frames.
+    anchor_buf: Option<(u32, wgpu::Buffer)>,
 }
 
 impl Gpu {
@@ -599,6 +625,11 @@ impl Gpu {
                 anchors,
                 camera_buf,
                 buffers: BTreeMap::new(),
+                readback: Vec::new(),
+                readback_sub: Vec::new(),
+                readback_next: 0,
+                readback_size: (0, 0),
+                anchor_buf: None,
                 next: 0,
                 ramps: Vec::new(),
                 camera_layout,
@@ -792,7 +823,7 @@ impl Gpu {
     /// and it has no way to ask for anything it was not given.
     #[allow(clippy::too_many_arguments)]
     pub fn draw(
-        &self,
+        &mut self,
         colour_view: &wgpu::TextureView,
         depth_view: &wgpu::TextureView,
         size: (u32, u32),
@@ -823,14 +854,28 @@ impl Gpu {
                 kind: 0,
             })
             .collect();
-        let anchor_buf = (!anchor_data.is_empty()).then(|| {
-            self.device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("anchors"),
-                    contents: bytemuck::cast_slice(&anchor_data),
-                    usage: wgpu::BufferUsages::VERTEX,
-                })
-        });
+        // Anchors do not move between frames, so the same quad buffer is drawn every
+        // frame. Rebuilding it each frame was a `create_buffer_init` for nothing; cache it
+        // and recreate only when the count changes.
+        let anchor_buf = if anchor_data.is_empty() {
+            None
+        } else {
+            let n = anchor_data.len() as u32;
+            match &self.anchor_buf {
+                Some((k, b)) if *k == n => Some(b.clone()),
+                _ => {
+                    let b = self
+                        .device
+                        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                            label: Some("anchors"),
+                            contents: bytemuck::cast_slice(&anchor_data),
+                            usage: wgpu::BufferUsages::VERTEX,
+                        });
+                    self.anchor_buf = Some((n, b.clone()));
+                    Some(b)
+                }
+            }
+        };
 
         let mut enc = self
             .device
@@ -917,14 +962,27 @@ impl Gpu {
         let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
     }
 
-    pub fn read_rgba(&self, target: &Offscreen) -> Vec<u8> {
+    pub fn read_rgba(&mut self, target: &Offscreen) -> Vec<u8> {
         let bpr = (target.width * 4).next_multiple_of(256);
-        let buf = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("readback"),
-            size: (bpr * target.height) as u64,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
+        let size = (target.width, target.height);
+        if self.readback_size != size {
+            let make = || {
+                self.device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("readback"),
+                    size: (bpr * target.height) as u64,
+                    usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+                    mapped_at_creation: false,
+                })
+            };
+            self.readback = (0..READBACK_LAG + 1).map(|_| make()).collect();
+            self.readback_sub = vec![None; READBACK_LAG + 1];
+            self.readback_next = 0;
+            self.readback_size = size;
+        }
+
+        // This frame's copy goes into the next slot.
+        let slot = self.readback_next;
+        let buf = self.readback[slot].clone();
         let mut enc = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
@@ -949,10 +1007,31 @@ impl Gpu {
                 depth_or_array_layers: 1,
             },
         );
-        self.queue.submit([enc.finish()]);
-        let slice = buf.slice(..);
+        let idx = self.queue.submit([enc.finish()]);
+        self.readback_sub[slot] = Some(idx.clone());
+        self.readback_next = (slot + 1) % (READBACK_LAG + 1);
+
+        // Read the slot the ring will next overwrite: the one copied `READBACK_LAG` frames
+        // ago, once the ring is full. After the cursor advances, `readback_next` points at
+        // exactly that slot, because the ring is `READBACK_LAG + 1` long.
+        let read_slot = self.readback_next;
+        let old = self.readback_sub[read_slot].clone();
+        let (source_slot, wait_for) = match old {
+            // Ring not full yet: nothing is old enough, so block on the copy just
+            // submitted. The warmup is two frames and invisible.
+            None => (slot, idx),
+            // Steady state: wait only on a `READBACK_LAG`-frames-old submission. The GPU
+            // has had that long to finish it, so this returns ~immediately and does NOT
+            // wait for this frame's draw — the overlap that removes the fence.
+            Some(o) => (read_slot, o),
+        };
+        let source = &self.readback[source_slot];
+        let slice = source.slice(..);
         slice.map_async(wgpu::MapMode::Read, |_| {});
-        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+        let _ = self.device.poll(wgpu::PollType::Wait {
+            submission_index: Some(wait_for),
+            timeout: None,
+        });
         let mapped = slice.get_mapped_range();
         let mut out = Vec::with_capacity((target.width * target.height * 4) as usize);
         for row in 0..target.height {
@@ -960,7 +1039,7 @@ impl Gpu {
             out.extend_from_slice(&mapped[start..start + (target.width * 4) as usize]);
         }
         drop(mapped);
-        buf.unmap();
+        source.unmap();
         out
     }
 }

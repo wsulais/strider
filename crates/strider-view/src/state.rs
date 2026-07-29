@@ -6,9 +6,7 @@
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
-use crate::raster::{
-    build_mask, test_anchors, AnchorVerdict, DrawnAnchor, Mask, Raster, UploadToken, Uploads,
-};
+use crate::raster::{build_mask, Mask, UploadToken, Uploads};
 use crate::snapshot::{EditDigest, Lod, PartitionId, PipelineResultRef, Snapshot};
 
 /// A drawing target the renderer was handed and does not understand
@@ -133,11 +131,7 @@ pub enum Presentation {
 pub struct Frame {
     pub frame_no: u64,
     pub generation: u64,
-    pub raster: Raster,
     pub draws: Vec<Draw>,
-    /// Depth-dependent content, drawn here because it must be
-    /// ([[RFC-0006:C-OVERLAY]] 1).
-    pub anchors: Vec<DrawnAnchor>,
     /// Present iff the host separately scheduled a pipeline and it finished
     /// ([[RFC-0006:C-RENDER]] 3).
     pub pipeline: Option<PipelineResultRef>,
@@ -145,15 +139,6 @@ pub struct Frame {
     pub holes: Vec<PartitionId>,
     pub effects: Vec<Effect>,
     pub presentation: Presentation,
-}
-
-impl Frame {
-    pub fn occluded_anchors(&self) -> usize {
-        self.anchors
-            .iter()
-            .filter(|a| matches!(a.verdict, AnchorVerdict::Occluded { .. }))
-            .count()
-    }
 }
 
 /// What happened to a batch the host delivered.
@@ -183,7 +168,6 @@ pub struct Stats {
     pub draws_fresh: u64,
     pub draws_fallback: u64,
     pub holes: u64,
-    pub points_drawn: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -307,7 +291,6 @@ impl RenderState {
         }
 
         // 2. Draw what is resident, and ask for what is not.
-        let mut raster = Raster::new(&snap.view);
         let mut draws = Vec::new();
         let mut holes = Vec::new();
         for v in &snap.visible {
@@ -344,7 +327,6 @@ impl RenderState {
                     .as_ref()
                     .map(|m| (m.hidden, m.reclassified))
                     .unwrap_or((0, 0));
-                raster.draw(&snap.view, v.id, verts, upload.mask.as_ref());
                 match freshness {
                     Freshness::Fresh => self.stats.draws_fresh += 1,
                     _ => self.stats.draws_fallback += 1,
@@ -391,7 +373,6 @@ impl RenderState {
                 });
             }
         }
-        self.stats.points_drawn += raster.drawn_points;
 
         // 3. Eviction. [[RFC-0007:C-INVALIDATION]] 1's nested qualification: retention
         //    "prohibits rebuilding what is still current, not bounded cache management".
@@ -424,13 +405,10 @@ impl RenderState {
             effects.push(Effect::Evict { id, lod, token });
         }
 
-        let anchors = test_anchors(&snap.anchors, &snap.view, &raster);
         Frame {
             frame_no,
             generation: snap.generation,
-            raster,
             draws,
-            anchors,
             pipeline: snap.pipeline,
             holes,
             effects,

@@ -428,7 +428,6 @@ impl Document {
             generation: self.generation,
             view,
             visible,
-            anchors: self.anchors.clone(),
             pipeline,
         }
     }

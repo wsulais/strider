@@ -1,19 +1,20 @@
 // SPDX-FileCopyrightText: 2026 Strider contributors
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-//! Rasterisation, the retained edit mask, and the depth test.
+//! The vertex format a device buffer carries, and the retained edit mask.
 //!
-//! The renderer draws a top-down plan: for each cell, the highest point that landed in
-//! it. That gives a real depth buffer over real points, which is what lets
-//! [[RFC-0006:C-OVERLAY]] 1 be *demonstrated* rather than asserted — a measurement
-//! anchored under a canopy is occluded by the canopy, and the prototype can say by
-//! which partition.
+//! Depth-dependent content ([[RFC-0006:C-OVERLAY]] 1) is now handled in hardware: the
+//! device layer draws anchor billboards against the same depth buffer the cloud wrote, so
+//! occlusion is a `<` in the GPU and not a decision anybody made on the CPU. An earlier
+//! version rasterised every point into a top-down plan here just to depth-test anchors;
+//! that was a second, redundant copy of a depth test the GPU already did, and it cost on
+//! the order of the point count per frame. What remains is what only the CPU can do: the
+//! mask an edit set implies, cached against its digest.
 
-use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use crate::snapshot::{Anchor, EditAction, EditRef, PartitionId, View};
+use crate::snapshot::{EditAction, EditRef};
 
 /// One point as the renderer holds it: the vertex format a device buffer carries.
 ///
@@ -148,177 +149,4 @@ pub(crate) fn build_mask(
         hidden,
         reclassified,
     }
-}
-
-/// The drawn output: a top-down plan with a depth buffer.
-///
-/// Returned by value each frame. That is the literal reading of "the renderer is a
-/// function from state to drawn output rather than a loop"
-/// ([[RFC-0006:C-SURFACE]] 3's rationale) — in a real renderer these are the commands
-/// recorded into the surface, and here they are cells a host can paint into a terminal
-/// or into a Qt widget without either knowing about the other.
-#[derive(Clone, Debug)]
-pub struct Raster {
-    pub cols: u16,
-    pub rows: u16,
-    /// Highest point in each cell. `f32::MIN` where nothing landed.
-    pub height: Vec<f32>,
-    /// Class of that highest point.
-    pub class: Vec<u8>,
-    /// Which partition supplied it — what an occlusion verdict names.
-    pub owner: Vec<u32>,
-    /// Points that landed in each cell, after the edit mask.
-    pub hits: Vec<u32>,
-    pub drawn_points: u64,
-    pub masked_out: u64,
-}
-
-impl Raster {
-    pub(crate) fn new(view: &View) -> Self {
-        let n = view.cols as usize * view.rows as usize;
-        Self {
-            cols: view.cols,
-            rows: view.rows,
-            height: vec![f32::MIN; n],
-            class: vec![0; n],
-            owner: vec![u32::MAX; n],
-            hits: vec![0; n],
-            drawn_points: 0,
-            masked_out: 0,
-        }
-    }
-
-    pub fn at(&self, col: u16, row: u16) -> usize {
-        row as usize * self.cols as usize + col as usize
-    }
-
-    pub fn filled(&self, col: u16, row: u16) -> bool {
-        self.hits[self.at(col, row)] > 0
-    }
-
-    /// The height range of what was actually drawn, or `None` if nothing was.
-    ///
-    /// Exists so a host can frame the camera on the cloud rather than on the source's
-    /// declared extent. The two differ by a lot: this file spans 70 m of z, and the points a
-    /// viewport at level 6 actually holds sit within about 4 m of the ground.
-    pub fn drawn_z_range(&self) -> Option<(f32, f32)> {
-        let (mut lo, mut hi) = (f32::MAX, f32::MIN);
-        for (i, z) in self.height.iter().enumerate() {
-            if self.hits[i] > 0 {
-                lo = lo.min(*z);
-                hi = hi.max(*z);
-            }
-        }
-        (lo <= hi).then_some((lo, hi))
-    }
-
-    pub(crate) fn draw(
-        &mut self,
-        view: &View,
-        id: PartitionId,
-        verts: &[Vertex],
-        mask: Option<&Mask>,
-    ) {
-        let (w, h) = (
-            view.max[0] - view.min[0],
-            view.max[1] - view.min[1],
-        );
-        if w <= 0.0 || h <= 0.0 {
-            return;
-        }
-        for (i, v) in verts.iter().enumerate() {
-            let mut class = v.class;
-            if let Some(m) = mask {
-                match m.flags.get(i).copied().unwrap_or(KEEP) {
-                    HIDE => {
-                        self.masked_out += 1;
-                        continue;
-                    }
-                    f if f >= RECLASS => class = f - RECLASS,
-                    _ => {}
-                }
-            }
-            let u = (v.x - view.min[0]) / w;
-            let t = (v.y - view.min[1]) / h;
-            if !(0.0..1.0).contains(&u) || !(0.0..1.0).contains(&t) {
-                continue;
-            }
-            let col = (u * view.cols as f32) as u16;
-            // Rows run north-to-south so the plan reads like a map.
-            let row = ((1.0 - t) * view.rows as f32) as u16;
-            let idx = self.at(col.min(view.cols - 1), row.min(view.rows - 1));
-            self.drawn_points += 1;
-            self.hits[idx] += 1;
-            if v.z > self.height[idx] {
-                self.height[idx] = v.z;
-                self.class[idx] = class;
-                self.owner[idx] = id.0;
-            }
-        }
-    }
-}
-
-/// Whether an anchor is in front of the cloud, and what hid it if not.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum AnchorVerdict {
-    Visible,
-    /// Hidden by points nearer the camera — for a top-down view, points above it.
-    Occluded { by: PartitionId, above_by_cm: i32 },
-    /// Outside the view.
-    OffScreen,
-}
-
-/// An anchor as the renderer emits it.
-#[derive(Clone, Debug)]
-pub struct DrawnAnchor {
-    pub label: String,
-    pub col: u16,
-    pub row: u16,
-    pub z: f32,
-    pub verdict: AnchorVerdict,
-}
-
-/// Depth-test every anchor against what was actually drawn.
-///
-/// Against what was *drawn*, not against what is visible: a partition still in flight
-/// has nothing on screen to occlude with, so this keeps the verdict honest about the
-/// frame the user is looking at. It also means an anchor can flicker from visible to
-/// occluded as a finer level arrives — which is a real property of the design and worth
-/// seeing rather than smoothing over.
-pub(crate) fn test_anchors(anchors: &[Anchor], view: &View, raster: &Raster) -> Vec<DrawnAnchor> {
-    let (w, h) = (view.max[0] - view.min[0], view.max[1] - view.min[1]);
-    let mut out = Vec::with_capacity(anchors.len());
-    for a in anchors {
-        let u = (a.x - view.min[0]) / w;
-        let t = (a.y - view.min[1]) / h;
-        if !(0.0..1.0).contains(&u) || !(0.0..1.0).contains(&t) {
-            out.push(DrawnAnchor {
-                label: a.label.clone(),
-                col: 0,
-                row: 0,
-                z: a.z,
-                verdict: AnchorVerdict::OffScreen,
-            });
-            continue;
-        }
-        let col = ((u * view.cols as f32) as u16).min(view.cols - 1);
-        let row = (((1.0 - t) * view.rows as f32) as u16).min(view.rows - 1);
-        let idx = raster.at(col, row);
-        let verdict = if raster.hits[idx] > 0 && raster.height[idx] > a.z {
-            AnchorVerdict::Occluded {
-                by: PartitionId(raster.owner[idx]),
-                above_by_cm: ((raster.height[idx] - a.z) * 100.0) as i32,
-            }
-        } else {
-            AnchorVerdict::Visible
-        };
-        out.push(DrawnAnchor {
-            label: a.label.clone(),
-            col,
-            row,
-            z: a.z,
-            verdict,
-        });
-    }
-    out
 }
