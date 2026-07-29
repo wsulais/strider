@@ -9,6 +9,8 @@
 //! them, which is what the spatial access layer does and what
 //! [[RFC-0007:C-EXTRACT]] 4 relies on being possible.
 
+extern crate alloc;
+
 use crate::error::{Error, Result};
 use crate::las::{f64_at, i32_at, u64_at, Vlr};
 use strider_core::{Aabb, Range};
@@ -193,6 +195,14 @@ impl Node {
 #[derive(Clone, Debug, Default)]
 pub struct Hierarchy {
     nodes: Vec<Node>,
+    /// Key to position in `nodes`.
+    ///
+    /// Not an optimisation to be justified by measurement — a correction. Looking a node up by
+    /// key is what octree traversal does once per visited cell, every frame, so a linear scan
+    /// makes the per-frame cost the product of cells visited and nodes known. That grows as a
+    /// viewer zooms *in*, because descent goes deeper, which shows up as an application that
+    /// slows down while drawing steadily fewer points.
+    by_key: alloc::collections::BTreeMap<VoxelKey, usize>,
     unread_pages: Vec<Entry>,
     pages_read: usize,
 }
@@ -205,6 +215,7 @@ impl Hierarchy {
             if e.is_page_ref() {
                 self.unread_pages.push(*e);
             } else if e.point_count > 0 {
+                self.by_key.insert(e.key, self.nodes.len());
                 self.nodes.push(Node {
                     key: e.key,
                     bounds: e.key.bounds(root),
@@ -226,6 +237,11 @@ impl Hierarchy {
 
     pub fn nodes(&self) -> &[Node] {
         &self.nodes
+    }
+
+    /// One node by key, in logarithmic time.
+    pub fn node(&self, key: VoxelKey) -> Option<&Node> {
+        self.by_key.get(&key).and_then(|i| self.nodes.get(*i))
     }
 
     pub fn pages_read(&self) -> usize {

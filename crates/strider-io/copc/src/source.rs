@@ -276,7 +276,7 @@ impl Source {
 
     /// A node the index knows about, by key.
     pub fn node(&self, key: VoxelKey) -> Option<&Node> {
-        self.hierarchy.nodes().iter().find(|n| n.key == key)
+        self.hierarchy.node(key)
     }
 
     /// A cheap, shareable snapshot of everything decoding needs.
