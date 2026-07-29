@@ -121,6 +121,23 @@ industrial scanning can be added without reshaping it.
 - **Partition order** — the fixed total order (Morton over node keys) in which a
   committed run combines reductions, *never* completion order. What makes
   bit-identity achievable without a new sequencing concept (`RFC-0003:C-COMMIT` 3).
+- **Associative form** — an accumulator whose combination is exactly associative,
+  so its result does not depend on the order partials are merged in. Scaled-integer
+  accumulation is the usual one. The *second* route to bit-identity, alongside
+  partition order, and the only one that survives being handed to a component whose
+  scheduler we do not control (`RFC-0003:C-COMMIT` 5).
+  Note the two axes: an *accumulator* is associative or is not; an **attribute
+  admits** an associative form only if one quantum spans its smallest resolvable
+  value and its largest reachable total inside the accumulator's range. The clause
+  turns on the second, which is the stricter test.
+- **Accumulation quantum** — the step to which an input value is rounded before it
+  enters an associative accumulator. Declared per attribute and reported *beside the
+  result value*, not only in the run's configuration, so whoever holds the number can
+  see how finely it was computed (`RFC-0003:C-COMMIT` 7).
+  Deliberately **not** called *scale*: in fixed-point and decimal representations
+  "scale" names a digit count, and reads as a claim that the stored value has been
+  multiplied. Nothing in a result is scaled — the quantum is a step size in the
+  attribute's own unit. *Quantisation* stays the name of the process.
 - **Adaptive partitioning** — the cache reshaping partitions to match how a user is
   working: merging while orbiting one tree, subdividing for finer working sets.
   **Permitted and wanted for preview and rendering; forbidden for committed runs**,

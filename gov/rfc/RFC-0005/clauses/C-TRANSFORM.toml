@@ -31,7 +31,7 @@ the points alone.
 (2) is the substantive requirement. Transforming a viewport's bounds costs a handful of operations;
 transforming the points it contains costs billions. Beyond cost, LAS and COPC store coordinates as scaled
 integers, so reprojection requires requantisation — which is lossy and forfeits the bit-identity
-[[RFC-0003:C-COMMIT]] 2 requires, by moving aggregates from exact integer arithmetic onto floating point
+[[RFC-0003:C-COMMIT]] 5 prefers, by coarsening the quantum an aggregate over the result must disclose
 where reduction order starts to matter. Keeping points in their native system also means references into
 them stay valid, which is what C-IDENTITY relies on and the reason reprojection cannot orphan an edit.
 

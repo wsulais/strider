@@ -1,0 +1,229 @@
+#:schema ../schema/adr.schema.json
+
+[govctl]
+id = "ADR-0014"
+title = "Associative accumulation, so an engine keeps the parallelism"
+status = "proposed"
+date = "2026-07-31"
+refs = [
+    "ADR-0002",
+    "ADR-0008",
+    "ADR-0010",
+    "RFC-0002:C-APPROX",
+    "RFC-0002:C-EXEC",
+    "RFC-0002:C-VERIFIED",
+    "RFC-0003:C-COMMIT",
+    "RFC-0003:C-PREVIEW",
+    "RFC-0006:C-LAYERING",
+]
+
+[content]
+context = """
+[[RFC-0003:C-COMMIT]] 2 promises a bit-identical committed run and (3) delivers it by fixing reduction order
+from partition identity. That obligation is only enforceable where Strider controls the scheduler. The
+question this decision answers is what happens to it when the reduction is evaluated by a general-purpose
+analytical engine — the arrangement [[ADR-0002]] keeps reachable and [[RFC-0006:C-LAYERING]] 2 permits.
+
+A throwaway prototype against DataFusion 54.1.0 measured the answer rather than reasoning about it. The
+counts below are floors, not settled figures: how many distinct results a nondeterministic reduction happens
+to produce varies between runs of the measurement itself, which is part of the finding.
+
+**The obligation is violated, and silently.** Summing one attribute over a fixed 512-point input produced at
+least four distinct bit patterns across seventy-two runs. Partial aggregates are merged in completion order,
+which (3) explicitly forbids, and floating-point addition is not associative. No error, no warning: a
+plausible number, wrong in the last bits.
+
+**Constraining the engine's scheduler does not fix it.** This is the finding that closes the obvious door.
+Pinning the degree of parallelism to one still produced two distinct bit patterns over forty runs — at a
+single degree there is no round-robin repartitioning left to disable, and the source's own partitions are
+still merged as they arrive. The scheduler levers that exist are session-wide and coarse, and none of them
+reaches the arrival order inside a two-phase aggregate. The route is not expensive; it is unavailable.
+
+**Choosing a group key so no group spans a partition does not fix it either.** Grouping by the owning octree
+cell still produced at least eight distinct per-cell bit patterns. The inferred cause is that the hash
+repartition interleaves batches into each group's accumulator as they arrive regardless of which partition
+they came from; the measurement establishes the outcome rather than the mechanism.
+
+What did work was attacking the other side of the identity. An accumulator holding a scaled integer, merging
+scaled integers, and dividing once at the end is associative, so combination order is irrelevant by
+construction. Registered as an ordinary aggregate function, it produced a single bit pattern across
+seventy-two runs spanning six degrees of parallelism, three partition sizes and four batch sizes, while the
+native sum beside it did not. Its declared quantum rides on the result column's field metadata and was
+measured surviving aliasing, grouping, subquery nesting and a hash join — but *not* an expression that
+consumes the reduction, where a fresh field is built and the tag is lost.
+
+The cost is a floor on how finely inputs are distinguished. Against a sorted-ascending floating-point fold,
+the fixed-point total differed by 4.9e-9 at a quantum of one nanometre — far below any LiDAR instrument's
+precision, but a real semantic change: the result is exactly reproducible *at a stated quantum* rather than
+being the most accurate sum obtainable."""
+decision = """
+Committed reductions accumulate in an associative form wherever the attribute admits one, and are then free
+to be evaluated by a component whose combination order Strider does not control. The obligations are written
+in [[RFC-0003:C-COMMIT]] (3, 5, 7, 8, 9) and [[RFC-0002:C-VERIFIED]] 1; this ADR records only *why*.
+
+Why **change the arithmetic** rather than the scheduler:
+
+- **The scheduler route is closed, not merely costly.** Bit-identity does not return at one degree of
+  parallelism, so there is no configuration in which constraining the engine delivers the guarantee. The
+  alternatives section records what was tried.
+- **Associativity is a local property.** It lives in one accumulator, is testable in isolation, and cannot
+  be undone by a plan rewrite. Scheduler constraints are global, ambient, and silently revocable by an
+  unrelated configuration change.
+- **The extension point is the stable one.** An aggregate function is the same surface a spatial function
+  library sits on, and it absorbed none of the breaking changes that reached the prototype's plan-level code
+  across a single version bump. One version bump is thin evidence, and it is the only evidence there is.
+
+Why the promise is **narrowed rather than weakened**: a result now carries its own quantum, so a committed
+figure is checkable by a third party who holds neither the pipeline nor the run configuration. That is more
+than the previous arrangement offered, where reproducibility depended on repeating the run as configured.
+
+What this **retires from [[ADR-0008]]**, precisely. Two of its rationale bullets no longer hold:
+
+- that claiming independence from partition size "would require order-independent accumulation everywhere, a
+  much larger commitment". The commitment was measured — two accumulators on the engine's most stable
+  extension point — and the estimate does not survive it.
+- that exact integer arithmetic is "a SHOULD rather than a MUST".
+
+Its *reason* for the SHOULD survives intact and is worth being clear about: "arbitrary floating-point
+attributes have no such representation" is true, and [[RFC-0003:C-COMMIT]] 5's "where its attribute admits
+one" is that reason written as a gate rather than as a licence to skip. What changed is the cost for the
+attributes that do admit a form, not the judgement about the ones that do not. [[ADR-0008]]'s decision — that
+committed runs are bit-identical and previews relaxed — is untouched.
+
+Why (8) and (9) rather than leaning on (6): the two checks fail on different implementations. A reduction
+merging partials on arrival is usually unstable run-to-run, so (6) catches it — the prototype's was caught
+that way. What (6) cannot catch is a reduction made stable *within* a configuration, by pinning a thread pool
+or fixing an order within each partition but not across them, that still answers differently at another
+degree of parallelism or partition size. (6) varies neither, so it never looks."""
+consequences = """
+### Positive
+
+Committed reductions become bit-identical across *different* configurations, not merely across repetitions of
+one, which is a stronger claim than the clause previously made and was measured across six degrees of
+parallelism, three partition sizes and four batch sizes. Aggregation, spill, two-phase reduction and joins
+stay delegated, so an external engine's optimisation work continues to accrue without a correctness cost. The
+disclosure required by [[RFC-0003:C-COMMIT]] 7 travels on ordinary Arrow field metadata, so it reaches
+consumers that have never heard of Strider and costs no envelope, keeping [[RFC-0002:C-EXEC]] 3 intact.
+
+### Negative
+
+Every committed reduction now needs an accumulator written against the engine's aggregate interface rather
+than the built-in of the same name, and an author who reaches for the built-in gets a result that is wrong in
+a way no single-configuration test will catch. A floor on input resolution is introduced where none existed:
+a fixed-point total is not the most accurate sum available, and the quantum must be chosen per attribute,
+since one suited to coordinates in metres is not suited to a unit normal component or a ratio spanning many
+orders of magnitude. Attributes admitting no workable quantum fall back to [[RFC-0003:C-COMMIT]] 3's ordered
+combination and cannot be delegated, so two mechanisms coexist permanently.
+
+The disclosure carrier is narrower than it first appears. A quantum on a field survives aliasing, grouping,
+nesting and joins, but an expression that consumes the reduction — a sum multiplied by two — builds a fresh
+field and loses it. So (7) is a statement about an *unmodified* reduction result, not blanket provenance, and
+any delivered figure derived arithmetically from a reduction needs its own answer. Arguably the tag *should*
+be lost there, since the derived quantity's precision is not the reduction's, but the consequence is a real
+scope limit rather than a detail.
+
+[[RFC-0003:C-COMMIT]] 7 also obliges a declared error bound as a function of the number of accumulated
+values. Nothing in the prototype derived or checked such a bound — it measured one difference at one input
+size — so the obligation's feasibility is argued from the arithmetic, not demonstrated. (9) exists partly to
+stop that gap becoming permanent. And [[RFC-0002:C-VERIFIED]] 1's reduction item now carries a property, a
+route and a disclosure, which is more for an assessor to hold in mind than one clause reference was.
+
+### Neutral
+
+Nothing here bears on reductions outside committed runs: a preview may use the engine's built-in aggregates
+freely, since [[RFC-0003:C-PREVIEW]] does not promise reproducibility. Nor does it bear on operators whose
+divergence is geometric rather than arithmetic — a neighbourhood truncated by a finite halo is approximate
+under [[RFC-0002:C-APPROX]] 1 however exactly it is summed. Minimum and maximum are already order-independent
+and are unaffected either way.
+
+[[ADR-0010]] argues against requantising stored coordinates partly because requantisation forfeits the
+scaled-integer representation [[RFC-0003:C-COMMIT]] 5 depends on. That argument survives but should be read
+narrowly: a reprojected cloud is still scaled integers, so the attribute still admits an associative form and
+committed runs over it are not forced onto floating point. What requantisation actually costs is a coarser
+quantum to disclose under (7) — a real loss, and not the one that ADR states.
+
+This decision also settles nothing about *which* engine. It constrains the accumulator's algebra, not the
+component that runs it, and the same accumulators satisfy [[RFC-0003:C-COMMIT]] 5 under Strider's own
+executor.
+
+Reversal cost is low in the intended direction and high in the other. Adding an ordered-combination fallback
+for a newly awkward attribute is additive and touches one operator. Withdrawing the quantum disclosure after
+committed figures have been delivered is not a code change at all — it is a change to what was promised about
+numbers already in someone else's report, and those cannot be un-delivered. That asymmetry is why (7) is
+written as an obligation on the output rather than as a recommendation to implementers."""
+
+[[content.alternatives]]
+text = "Accumulate committed reductions in an associative form — fixed-point or exact integer — and register them as ordinary aggregate functions of whatever engine evaluates them"
+status = "accepted"
+pros = [
+    "Measured to a single bit pattern across 72 runs spanning 6 degrees of parallelism, 3 partition sizes and 4 batch sizes, where the native sum was not",
+    "Order independence is a local property of one accumulator, testable in isolation and not revocable by a plan rewrite",
+    "Aggregation, spill, two-phase reduction and joins remain delegated, so upstream optimisation keeps accruing",
+    "Uses the engine's most stable extension point, which absorbed none of the breaking changes the prototype's plan-level code hit",
+    "The declared quantum rides on Arrow field metadata and was measured reaching the caller through aliasing, grouping, nesting and a join",
+]
+cons = [
+    "Introduces a floor on how finely inputs are distinguished: a fixed-point total is not the most accurate sum available",
+    "The accumulation quantum must be chosen per attribute, since coordinates, unit normals and unbounded ratios do not share one",
+    "Attributes admitting no workable quantum still need ordered combination, so two mechanisms coexist permanently",
+    "An author who reaches for the built-in aggregate of the same name gets a silently wrong committed result",
+    "The disclosure is lost when an expression consumes the reduction, so it covers an unmodified result only",
+    "The declared error bound the obligation requires was argued from arithmetic, not measured",
+]
+
+[[content.alternatives]]
+text = "Constrain the engine's scheduler: disable round-robin repartitioning and pin the degree of parallelism, so its combination order becomes the fixed order the clause requires"
+status = "rejected"
+pros = [
+    "Would need no new accumulator, no quantum, and no disclosure obligation",
+    "No floor on input resolution; floating-point accumulation kept at full available accuracy",
+    "The levers exist as documented engine configuration rather than extension code",
+]
+cons = [
+    "Measured not to work: pinning parallelism to one degree still gave two distinct bit patterns over forty runs",
+    "Nothing in the scheduler configuration reaches arrival order inside a two-phase aggregate, which is where the nondeterminism lives",
+    "The levers that do exist are session-wide, so they would remove parallelism from disjoint work that was never at risk",
+    "Would relocate a correctness guarantee into ambient configuration, revocable by an unrelated tuning change with no test noticing",
+]
+rejection_reason = "It does not deliver the guarantee at any setting. Bit-identity does not return even at a single degree of parallelism, because the source's own partitions are still merged as they arrive and no scheduler option reaches inside the aggregate. Which rejection is on the record matters: a reader who discounts a cost argument would otherwise believe this route is still open, and it is not."
+
+[[content.alternatives]]
+text = "Group every committed reduction by the owning octree cell, so no group's rows span a partition and the engine has nothing to merge across partitions"
+status = "rejected"
+pros = [
+    "Would need no new accumulator, no quantum, and no disclosure obligation",
+    "Cell identity is already available at the source, so the group key costs nothing to produce",
+]
+cons = [
+    "Measured not to work: at least eight distinct per-group bit patterns across runs",
+    "Confining a group to one partition does not confine its accumulation order — the inferred cause is that the hash repartition interleaves batches into the accumulator as they arrive",
+]
+rejection_reason = "Tested and falsified. Recorded rather than dropped because it is the first thing a reader will propose, and because only the measurement settles it — the reasoning sounds correct right up to the point where it is run."
+
+[[content.alternatives]]
+text = "Delegate the per-cell aggregate to the engine but own an ordered cross-cell combine, so only the final fold over one row per cell is Strider's"
+status = "rejected"
+pros = [
+    "Would keep almost all delegation: the vectorised per-group work stays with the engine",
+    "No quantum, no floor on input resolution, no disclosure obligation",
+    "Small: an ordered fold over one row per cell is a sort and a loop, not an aggregation engine",
+]
+cons = [
+    "Rests on the per-cell aggregates being reproducible, and they are not — the measurement that rejected cell-keyed grouping shows the per-cell sums themselves varying",
+    "An ordered outer fold over unstable inner values folds noise in a fixed order and is still not reproducible",
+]
+rejection_reason = "The most attractive option, and the one the prototype's own intermediate notes endorsed before the numbers were read carefully — which is why it is recorded rather than omitted. It fails because ordering the outer combine cannot repair an inner accumulation whose order is uncontrolled: the per-cell figures it would fold are exactly the ones measured to be nondeterministic."
+
+[[content.alternatives]]
+text = "Keep committed reductions entirely inside Strider: implement bounded two-phase aggregation and spill, and let the engine see only final disjoint results"
+status = "rejected"
+pros = [
+    "Total control of combination order, memory ceiling and spill target together",
+    "No floor on input resolution and no per-attribute quantum",
+    "One reduction mechanism, wholly owned",
+]
+cons = [
+    "Forgoes every future upstream improvement to vectorised grouped aggregation and spill",
+    "Unnecessary: associative accumulation reaches the same determinism without taking the machinery back",
+]
+rejection_reason = "It was the assumed price of determinism until the prototype measured the alternative. Associative accumulation delivers the same bit-identity on the engine's own most stable extension point, so the machinery does not need rebuilding — and rebuilding it would forfeit the upstream work that made delegation attractive in the first place."

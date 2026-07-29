@@ -1,7 +1,7 @@
 #:schema ../schema/adr.schema.json
 
 [govctl]
-id = "ADR-0014"
+id = "ADR-0013"
 title = "Caches as decorators, no virtual filesystem"
 status = "accepted"
 date = "2026-07-29"

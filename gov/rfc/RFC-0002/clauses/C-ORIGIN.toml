@@ -24,7 +24,8 @@ so the fact must travel with the result.
 
 (1) depends on C-VERIFIED for its meaning rather than defining verification here, because
 what must be verified is a property of the *operator contract* — halo sufficiency, memory ceiling, attribute
-completeness, reduction order, approximation honesty — and those obligations live in this RFC. A field
+completeness, reduction determinism and its disclosure, approximation honesty — and those obligations live
+in this RFC. A field
 with no defined truth condition would not be testable, and defining it twice would let the definitions drift.
 
 The nested prohibition exists because self-assertion would make the field decorative. An author confident

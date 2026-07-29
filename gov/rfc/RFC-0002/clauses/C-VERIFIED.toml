@@ -16,7 +16,10 @@ the definition belongs here rather than with release policy.
    - that its declared halo width is sufficient for its neighbourhood definition (C-HALO 3);
    - that its peak memory conforms to its declared ceiling (C-MEMORY 1);
    - that its declared attribute set is complete (C-PROJECTION 3);
-   - that any reduction it performs combines in partition order ([[RFC-0003:C-COMMIT]] 3);
+   - that any reduction it performs is independent of the degree of parallelism, the thread count and the
+     partition size ([[RFC-0003:C-COMMIT]] 8), that it reaches that property by the route
+     [[RFC-0003:C-COMMIT]] 5 requires for its attribute rather than by whichever was convenient, and that
+     it conforms to [[RFC-0003:C-COMMIT]] 7 in full where that route is associative accumulation;
    - that it declares its output approximate where it diverges (C-APPROX 1).
 2. An operator that has not been assessed against every item of (1) MUST be recorded as unverified.
    - Partial assessment MUST NOT be recorded as verification.
@@ -25,8 +28,16 @@ the definition belongs here rather than with release policy.
 
 The list is these five and not a general appeal to quality because each is exactly one of the obligations an
 operator can violate *silently* — an under-declared halo, an unbounded working set, an undeclared attribute
-read, an order-dependent reduction, an undisclosed approximation. Each fails without an error, which is why
-each needs a person rather than a test to attest it.
+read, a reduction whose answer moves with the scheduler or whose accumulation quantum is unstated, an undisclosed
+approximation. Each fails without an error, which is why each needs a person rather than a test to attest it.
+
+The reduction item asks for the property *and* the route, which looks redundant and is not. There are two
+ways to reach order independence, so an assessor checking only for fixed-order combination would reject a
+conformant operator — but [[RFC-0003:C-COMMIT]] 5 is an obligation rather than a menu, so an assessor
+checking only for the property would pass an operator that ordered-combines an attribute it was required to
+accumulate associatively. Both errors are available and the item has to close both. Conformance to
+[[RFC-0003:C-COMMIT]] 7 is cited whole rather than by its declaration bullet because the half that matters
+to a third party is the reporting, and citing only the declaration is how that half gets dropped.
 
 The assessor-other-than-author requirement is what keeps the marker from being decorative. An author
 confident enough to publish an operator is confident enough to self-certify, and the field is only worth
