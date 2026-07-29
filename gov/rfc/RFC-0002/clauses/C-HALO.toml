@@ -58,9 +58,11 @@ Halo membership is the only spatial property that is genuinely per-point rather 
 cannot live where C-EXEC 4 puts the others. Carrying it as an ordinary boolean column keeps C-EXEC 3
 intact — an external Arrow consumer sees a normal column, not an envelope.
 
-**Read-but-never-emit** is what prevents duplication. A point near a boundary is supplied to every
-partition whose halo reaches it; if each emitted it, the point would appear several times in the output.
-The rule is what makes a partitioned neighbourhood computation produce the same point count as its
+**Never relabel** is what prevents duplication, and it is a narrower rule than never-emit. A point near a
+boundary is supplied to every partition whose halo reaches it; if each turned it into a core point, it would
+appear several times in the output. Carrying it forward *still marked as halo* duplicates nothing, because it
+is removed before any operation depending on disjointness (2) and before the pipeline's output. What the rule
+guarantees is that a partitioned neighbourhood computation produces the same core point count as its
 whole-dataset equivalent.
 
 The non-disjointness rule (2) exists because the failure is silent. An aggregation over a halo
@@ -79,26 +81,16 @@ than it looks. It is tempting to treat small boundary differences as an acceptab
 not. A sufficient halo makes partitioning exactly lossless, so a difference is evidence the declared width
 is too small — a correctness defect that grows as partitions get smaller.
 
-(1)'s ordering bullet exists to make (5) achievable, and it is free where the halo is *constructed*: a
-partition's own points are known before any neighbour is borrowed, so appending borrowed points after them
-is the natural order rather than an imposition. Where core and halo points instead arrive interleaved —
-read in storage order, or inherited from a repartitioning — establishing the order costs exactly the gather
-(5) exists to avoid, which is why the obligation is on the batch handed to an operator rather than on every
-batch in existence: the stage that assembles a partition is the one that can satisfy it for free.
+(1)'s ordering bullet exists to make (5) achievable, and the obligation is on the batch *handed to an
+operator* rather than on every batch in existence, because the stage that assembles a partition is the one
+that can satisfy it without paying for it. Why an in-batch ordering contract is preferable to the
+alternatives is argued in the accompanying architecture decision.
 
-(5)'s two bullets are the refusal half, and they matter more than they look. Reducing a batch to a range is
-correct only if the range is the core points, which is true only if (1)'s ordering holds — and a
-mis-ordered batch reduced to a range fails silently, emitting halo points and dropping core points while
-returning a plausible point count. Requiring the ordering to be *verified* rather than assumed is what
-makes the cheap implementation safe; the prohibition on gathering instead is what stops an implementation
-recovering from a violation by paying the cost (5) was written to remove, and thereby hiding a defect in
-whatever produced the batch.
-
-The comparative case — why an in-batch ordering contract is preferable to a row filter, and to supplying
-core and halo points as separate batches — is argued in the accompanying architecture decision. What
-belongs here is only the consequence: the ordering is a semantic contract that a plain Arrow batch cannot
-express in its schema (C-EXEC 3), so (5)'s verification is the only thing standing between it and a silent
-wrong answer.
+(5)'s two bullets are the refusal half. Reducing a batch to a range is correct only if the range is the core
+points, and a plain Arrow batch cannot express its own row order in its schema (C-EXEC 3), so nothing but
+(5)'s check stands between a mis-ordered batch and a plausible wrong answer. The prohibition on gathering
+instead is what stops an implementation recovering from a violation by paying the cost (5) was written to
+remove, and thereby concealing a defect in whatever produced the batch.
 
 (1)'s third bullet is narrower than it looks and the narrowness is the point. The rule that prevents
 duplication is *never relabel*: a point borrowed by four partitions must not become four core points. What

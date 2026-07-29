@@ -6,6 +6,7 @@ title = "Core points first, so halo removal is two integers"
 status = "proposed"
 date = "2026-07-31"
 refs = [
+    "ADR-0016",
     "RFC-0002:C-EXEC",
     "RFC-0002:C-HALO",
     "RFC-0002:C-MATERIALISATION",
@@ -13,44 +14,58 @@ refs = [
 
 [content]
 context = """
-[[RFC-0002:C-HALO]] 1 requires an operator to read halo points and emit none of them, and forbids the halo
-attribute from a pipeline's final output. Both obligations are about *which* points and attributes survive;
-neither says anything about how the surviving ones are produced. A throwaway prototype measured what that
-silence costs.
+[[RFC-0002:C-HALO]] 1 governs *which* points and attributes survive a halo: a halo point may be read, must
+never be relabelled as a core point, and the halo attribute must be absent from a pipeline's final output.
+Nothing in it says how the surviving points are produced. A throwaway prototype measured what that silence
+costs.
 
-The measurement compared the address of the memory backing each attribute before and after the halo was
-removed. Identical addresses mean the bytes were never written a second time.
+(The wording of item 1 changed after this decision was taken — [[ADR-0016]] replaced a flat prohibition on
+emitting halo points with the never-relabel rule described above, so that a chain of operators could carry a
+halo between them. Nothing in this decision depends on which of the two wordings is in force; both are silent
+on production.)
 
-- Removing the halo by selecting points on the halo attribute: **0 of 8 attributes** kept their memory.
-  Every retained attribute was written again, at a cost proportional to the points *kept*, on every
-  partition of every neighbourhood operation.
-- Removing it by reducing the batch to a range of points: **7 of 7** kept their memory. The reduction
+The measurement compared, for each attribute, the address of the memory backing it before and after the halo
+was removed. A changed address is proof the bytes were rewritten. Over the same eight-attribute batch:
+
+- Removing the halo by **selecting points** on the halo attribute: **0 of 8** attributes kept their address.
+  Every retained attribute was written again, at a cost proportional to the points *kept*, on every partition
+  of every neighbourhood operation.
+- Removing it by **reducing the batch to a range** of points: **8 of 8** kept their address. The reduction
   adjusted two integers.
 
 Both produce identical output. Nothing in the results distinguishes them, which is why the expensive one is
 the one that gets written: selecting points by predicate is the obvious way to express "these and not
 those", and it is correct.
 
-The range-based route is only available if the core points are contiguous, so the question is what
-guarantees that. Traced end to end, the cheap route held all the way through: a partition decoded from a
-COPC-like source, handed to a neighbourhood operator that read the halo, reduced to its core points, and
-delegated to an analytical engine's aggregate — the coordinate attribute's address inside the engine was the
-address it had at decode. One materialisation, at decode, and nothing after it.
+The range-based route is only available if the core points are contiguous, so the question is what guarantees
+that. Traced end to end, the cheap route held all the way through: a partition built by a COPC-like source,
+handed to a neighbourhood operator that read the halo, reduced to its core points, and delegated to an
+analytical engine's aggregate, which returned the right count. The coordinate attribute's address in the batch
+handed to the engine equalled its address in the source batch. No address was read from inside the engine's
+own operator, so what is established is that nothing was copied *up to* the boundary — which is the part this
+decision governs.
 
 The operator in that trace is also where the general form of the problem showed itself. An operator that
 rebuilds every output attribute value-by-value pays the same invisible cost for the same invisible reason,
 whether or not a halo is involved. Rewritten to slice the attributes it passes through and materialise only
-the neighbour count it derives, it wrote one attribute instead of five, and its results were identical to a
-whole-dataset reference.
+the neighbour count it derives, it wrote exactly one attribute — the derived one — while its four
+pass-through attributes kept their addresses, and its results matched a whole-dataset reference exactly. The
+earlier version rebuilt every attribute it emitted; its addresses were never captured, so the comparison is
+one measured run against one inspected implementation rather than two measurements.
 
-One limit on all of this is worth stating with the evidence rather than after it: the measurement covered
-eight fixed-width attributes in one partition. No nested, dictionary-encoded or nullable attribute was
-exercised, and those are exactly the shapes where a naive memory-identity check passes without looking at
-the content."""
+One limit belongs with the evidence rather than after it, and a later measurement changed its shape. The
+figures above were obtained by comparing each attribute's *first* data buffer, over eight fixed-width
+attributes. That check is insufficient in general: a follow-up exercised a nullable attribute and a struct
+attribute and found the struct one reported *unchanged* by the first-buffer comparison while having been fully
+rewritten — a struct array has no data buffers of its own, so the comparison inspects nothing and always
+agrees. A transitive comparison over value buffers, validity bitmap and child arrays separated the two cases
+correctly, which is why [[RFC-0002:C-MATERIALISATION]] 4 specifies it that way. Dictionary-encoded attributes
+remain unexercised."""
 decision = """
 Core points precede halo points within a batch, so removing a halo is a reduction to a range rather than a
-selection over the whole batch. The obligations are written in [[RFC-0002:C-HALO]] (1, 5, 6) and
-[[RFC-0002:C-MATERIALISATION]]; this ADR records only *why*.
+selection over the whole batch. The obligations are written in [[RFC-0002:C-HALO]] — item 1's ordering
+bullet, and items 5 and 6 — and in [[RFC-0002:C-MATERIALISATION]]; this ADR records only *why*. Item 1's
+other bullets are [[ADR-0016]]'s.
 
 Why an **in-batch ordering contract** rather than the alternatives:
 
@@ -77,9 +92,10 @@ project's throughput claim with no home of its own."""
 consequences = """
 ### Positive
 
-Halo removal stops being proportional to the points kept and becomes proportional to nothing. Combined with
+Halo removal stops *writing* anything: its cost falls from rewriting every retained attribute to adjusting an
+offset and a length, plus one read pass over the halo attribute to verify the ordering. Combined with
 [[RFC-0002:C-MATERIALISATION]] 1, a neighbourhood operator's cost is the arithmetic it actually does plus the
-attributes it actually derives, and the measured path from decode to a delegated aggregate copies nothing.
+attributes it actually derives, and nothing on the measured path to a delegated aggregate is copied.
 The obligation is checkable by a test that can fail, which a value comparison could not be. Nothing about the
 interoperability surface changes: the halo attribute is still an ordinary column.
 
@@ -100,6 +116,14 @@ hand its output straight to an operator without an assembling stage in between.
 survive either, and that carve-out is a place a future implementation could hide: spilling to escape a
 sharing obligation is forbidden, but only by a sentence.
 
+The safety case rests on a verification whose obvious implementation reports success falsely. Comparing one
+buffer per attribute is the natural way to check memory identity, and it passes vacuously for a struct
+attribute and inspects only offsets for a variable-length or dictionary-encoded one — measured, not
+supposed. Those are the attribute shapes a real point cloud acquires as it gains richer per-point data, so
+the failure mode gets more likely rather than less. [[RFC-0002:C-MATERIALISATION]] 4 requires the transitive
+comparison for this reason, and an implementation that reads the obligation quickly will get it wrong in the
+direction that reports conformance.
+
 The cheapest option measured is not the one adopted, and that is a cost rather than an oversight. Separate
 core and halo batches would make removal free and need no ordering contract at all; the case for rejecting it
 rests on a judgement about operator authors, not on a measurement.
@@ -114,11 +138,11 @@ The decision does not bear on operators whose surviving points are not contiguou
 region or filtering on an attribute must gather, and [[RFC-0002:C-MATERIALISATION]] 1 holds such an operator
 only to gathering once.
 
-Reversal cost is low in the intended direction and high in the other. Relaxing the ordering later means
-reinstating a select-based removal, which is additive and local. Introducing the ordering *after* sources,
-partitioners and repartitioners exist means auditing each of them for an invariant none was written to
-maintain, with no schema-level signal to audit against — which is the argument for stating it now, while the
-only producer is a prototype."""
+Reversal cost is asymmetric, and the expensive direction is adoption rather than abandonment. Introducing the
+ordering *after* sources, partitioners and repartitioners exist means auditing every one of them for an
+invariant none was written to maintain, with no schema-level signal to audit against — which is the argument
+for stating it now, while the only producer is a prototype. Abandoning it later is cheap by comparison:
+reinstating a select-based removal is additive and local, and costs throughput rather than correctness."""
 
 [[content.alternatives]]
 text = "Order core points before halo points within a batch, and remove a halo by reducing the batch to that range"
@@ -150,7 +174,7 @@ cons = [
     "The cost is proportional to the points KEPT, and is paid on every partition of every neighbourhood operation",
     "Invisible: output is identical, so no result-level test can ever reveal it",
 ]
-rejection_reason = "It rewrites every retained attribute in order to drop a quarter of a batch's points, and does so invisibly — identical output, so nothing downstream reports the loss. For a project whose claim is that out-of-core processing can be fast rather than merely possible, the default path cannot be the one that copies the data on every partition of every neighbourhood operation."
+rejection_reason = "The discriminator is that its cost is invisible: output is identical, so no result-level test can ever reveal it, and a project claiming out-of-core processing can be fast rather than merely possible would be shipping a default path that copies the data on every partition of every neighbourhood operation with nothing to signal it. That it rewrites every retained attribute to drop a quarter of a batch's points is the measurement; that nothing would ever tell you is the reason."
 
 [[content.alternatives]]
 text = "Supply core points and halo points as separate batches, so removing the halo is dropping a batch"

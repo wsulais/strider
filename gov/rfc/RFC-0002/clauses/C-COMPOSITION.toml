@@ -9,11 +9,10 @@ status = "active"
 [content]
 text = """
 C-HALO 3 makes each operator answer for its own halo width. A planner that satisfies every declaration
-individually has therefore satisfied every operator — and can still have supplied too little. Where one
-neighbourhood operator consumes what another derived, the second operator's halo points carry values
-computed from a truncated neighbourhood, so the error walks inward one width per operator and the result is
-wrong at every partition boundary. No operator is in breach, nothing fails, and the answer is plausible.
-The obligation is the planner's because only a planner sees the whole chain.
+individually has therefore satisfied every operator — and can still have supplied too little, because halo
+widths compose along a chain while no single declaration accounts for the chain. The result is wrong at every
+partition boundary with no operator in breach of anything. Why that happens, and what avoiding it costs, is
+argued in the accompanying architecture decision; the obligation is here, and it is the planner's.
 
 1. Operators form a **dependent chain** where each after the first reads an attribute the previous one
    derives ([[RFC-0002:C-MATERIALISATION]] 1). Reading only attributes the previous operator passed through
@@ -63,11 +62,10 @@ the source's, the largest single declaration suffices, and no divergence exists 
 *data dependency* rather than on execution order also closes the obvious evasion: fusing two operators, or
 streaming batches from one into the next, changes the scheduling and not the arithmetic.
 
-(2) is written as a closed set with the third arrangement named because that arrangement is the whole reason
-the clause exists, and it is the one an implementation arrives at by doing the obvious thing. Both permitted
-arrangements are exact. Which is cheaper depends on the pipeline, so the clause requires the choice to be
-made rather than making it — the comparative case, and why one was not fixed, is argued in the accompanying
-architecture decision.
+(2) is written as a closed set, with the third arrangement named rather than left to follow from (3), because
+a prohibition a reader has to derive is one an implementation can miss. Both permitted arrangements are exact,
+and which is cheaper depends on the pipeline, so the clause requires the choice to be made rather than making
+it.
 
 (3)'s segment bullet exists because the two arrangements in (2) are endpoints rather than alternatives: a
 four-operator chain may be split into two pairs with one exchange between them, and that is often the
@@ -80,12 +78,10 @@ has no meaning: an unbounded reach contributes an unbounded term, so there is no
 approximation bound to state. Excluding it is honest where quietly summing what it happens to declare would
 not be.
 
-(4) is the refusal half, and it is not hypothetical. Nothing bounds a chain's length, so a long enough chain
-has a composed width exceeding the partition extent, at which point every partition borrows most of the
-dataset and [[RFC-0002:C-MEMORY]] 1's independence from total point count fails. The clause therefore has to
-say what happens when the width cannot be afforded, and it has to say it about *both* arrangements: halo
-exchange trades the wide halo for whole-dataset intermediate state between operators, which is the same
-ceiling breached from the other side.
+(4) is the refusal half. A composed width grows with the chain, so it can exceed what a partition-bounded
+ceiling permits, and the clause has to say what happens then rather than leaving a planner to supply what it
+cannot afford. It has to say it about *both* arrangements: exchange trades the wide halo for intermediate
+state held across every partition, which reaches the same ceiling from the other side.
 
 (6)'s second bullet is the part that makes the verification able to fail. Comparing only at or above the
 composed width would pass for an implementation that supplied the sum, for one that supplied a hundred times

@@ -44,8 +44,8 @@ projection coverage remains far narrower than PROJ's. Neither replaces PROJ wher
 Examining what should be transformed produced a stronger conclusion than the original question. Reprojecting
 a point cloud is close to the worst available operation on one: per-point trigonometry over billions of
 points that changes no information content, and — because LAS and COPC store coordinates as scaled integers
-— requantisation that is lossy and forfeits the exact integer accumulation [[RFC-0003:C-COMMIT]] 5 depends
-on. Transforming the *query region* instead costs a handful of operations. This is what QGIS does, and it is
+— requantisation that is lossy and coarsens the accumulation quantum a committed reduction over the result
+must disclose ([[RFC-0003:C-COMMIT]] 7). Transforming the *query region* instead costs a handful of operations. This is what QGIS does, and it is
 also why QGIS's edits are never orphaned by reprojection, the finding that closed [[RFC-0005:C-IDENTITY]].
 
 Vertical datums are where this stops being an engineering preference. Ellipsoidal and orthometric heights
@@ -80,8 +80,10 @@ Why **queries** are transformed and not the points:
 - **The cost difference is billions to one.** Transforming a viewport's bounds is a handful of operations;
   transforming the points inside it is per-point trigonometry that changes no information content.
 - **Requantisation would be a lasting loss.** LAS and COPC store scaled integers, so reprojecting forces
-  requantisation — lossy, and it forfeits the exact integer accumulation [[RFC-0003:C-COMMIT]] 5 depends on,
-  making later committed runs float-order-dependent unnecessarily.
+  requantisation, which is lossy. What it costs is precision, not determinism: a reprojected cloud is still
+  scaled integers, so it still admits the associative accumulation [[RFC-0003:C-COMMIT]] 5 requires and its
+  committed reductions are not pushed onto floating point. The loss is a coarser accumulation quantum to
+  declare under [[RFC-0003:C-COMMIT]] 7, carried by every result derived from the reprojected data.
 - **It keeps references valid.** Points staying in their native system is why reprojection cannot orphan a
   point reference, the property [[RFC-0005:C-IDENTITY]] relies on and the same avoidance QGIS uses.
 - **Explicit reprojection needs no new machinery.** Being position-independent, it declares zero halo and
@@ -204,7 +206,7 @@ cons = [
     "Invalidates every point reference, so edits could not survive ingest",
     "Requires write access and storage for a transformed copy of data defined by not fitting in memory",
 ]
-rejection_reason = "It performs the most expensive possible version of the operation, destroys the scaled-integer representation that [[RFC-0003:C-COMMIT]] 5 relies on, and invalidates the point references [[RFC-0005:C-IDENTITY]] depends on. Transforming query regions achieves the same interoperability for a negligible fraction of the cost."
+rejection_reason = "It performs the most expensive possible version of the operation, coarsens the accumulation quantum every later committed reduction must declare under [[RFC-0003:C-COMMIT]] 7, and invalidates the point references [[RFC-0005:C-IDENTITY]] depends on. Transforming query regions achieves the same interoperability for a negligible fraction of the cost."
 
 [[content.alternatives]]
 text = "One uniform backend rule: either require the reference backend for every transformation, or merely record the backend for every transformation"

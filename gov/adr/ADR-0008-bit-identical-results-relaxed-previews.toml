@@ -6,6 +6,7 @@ title = "Bit-identical results, relaxed previews"
 status = "accepted"
 date = "2026-07-29"
 refs = [
+    "ADR-0014",
     "RFC-0002:C-APPROX",
     "RFC-0002:C-EXEC",
     "RFC-0002:C-OVERVIEW",
@@ -83,10 +84,16 @@ Why **bit-identical committed runs**, which is the costly half:
   size would require order-independent accumulation everywhere, a much larger commitment; recording the
   configuration instead keeps the system tunable without weakening the guarantee, and makes it checkable
   rather than asserted.
+  *This bullet is superseded by [[ADR-0014]]: the commitment was implemented and measured, and is not
+  large. Independence from partition size is now required wherever an attribute admits an associative
+  accumulator, so the promise is scoped more widely than this bullet claims.*
 - **Exact integer arithmetic is available more often than expected.** LAS and COPC store coordinates as
   scaled integers, so position aggregates can frequently be accumulated exactly — independent of
   reduction order and therefore of configuration too. A SHOULD rather than a MUST, since arbitrary
   floating-point attributes have no such representation.
+  *The SHOULD is superseded by [[ADR-0014]]; the reason for it is not. Exact accumulation is now an
+  obligation where the attribute admits it, and "arbitrary floating-point attributes have no such
+  representation" survives as the gate that decides where it does.*
 
 Why previews are **relaxed**, and what bounds the relaxation:
 
@@ -103,6 +110,15 @@ Why previews are **relaxed**, and what bounds the relaxation:
   export to re-evaluate, because reusing a warm result is exactly the optimisation someone will reach
   for, and it would deliver a camera-dependent number as a committed one."""
 consequences = """
+### Superseded in part
+
+Two bullets of the rationale above are superseded by [[ADR-0014]], which measured the cost this decision
+estimated and found it small. What is superseded is the *estimate* and the SHOULD that rested on it; the
+decision recorded here — that a committed run is bit-identical while a preview is relaxed — stands
+unchanged, and so does the reason the SHOULD existed. The obligations moved from
+[[RFC-0003:C-COMMIT]] 5 being a preference to being a requirement where an attribute admits an
+associative accumulator.
+
 ### Positive
 
 A delivered result is reproducible by anyone who repeats it as recorded, which is what
