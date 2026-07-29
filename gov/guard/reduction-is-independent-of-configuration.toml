@@ -1,0 +1,23 @@
+#:schema ../schema/guard.schema.json
+
+[govctl]
+id = "GUARD-REDUCTION-IS-INDEPENDENT-OF-CONFIGURATION"
+title = "reduction result is independent of configuration"
+refs = [
+    "RFC-0001:C-CONFORMANCE",
+    "RFC-0003:C-COMMIT",
+]
+
+# [[RFC-0003:C-COMMIT]] 9, which GUARD-COMMITTED-RUN-IS-BIT-IDENTICAL-ON-REPETITION cannot
+# cover. That guard repeats one configuration; this one varies the two things the defect is
+# sensitive to — no fewer than three DISTINCT degrees of parallelism and no fewer than two
+# distinct partition sizes — and compares every result bitwise. It also confirms the measured
+# departure from exact arithmetic lies within the bound declared under
+# [[RFC-0003:C-COMMIT]] 7.
+#
+# The distinction matters because a reduction can be stable within a configuration and
+# different between them: pinning a thread pool, or fixing an order within each partition
+# but not across them, produces exactly that.
+[check]
+command = "devenv shell -- cargo test --release --test conformance_reduction_config -- --nocapture"
+timeout_secs = 1800

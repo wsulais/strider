@@ -1,0 +1,19 @@
+#:schema ../schema/guard.schema.json
+
+[govctl]
+id = "GUARD-SUMMARY-RESIDENCY-DOES-NOT-SCALE"
+title = "summary residency does not scale with input"
+refs = [
+    "RFC-0001:C-CONFORMANCE",
+    "RFC-0002:C-SUMMARY",
+]
+
+# [[RFC-0002:C-SUMMARY]] 4. Two input sizes an order of magnitude apart, peak TOTAL
+# summary residency measured across the run, and output compared against a
+# single-partition reference. Total rather than per-partition is load-bearing: an
+# implementation holding one global grid can report a per-partition slice of it and show a
+# flat figure while holding the whole thing. Output agreement alone proves nothing, since a
+# whole-extent implementation agrees too.
+[check]
+command = "devenv shell -- cargo test --release --test conformance_summary -- --nocapture"
+timeout_secs = 3600

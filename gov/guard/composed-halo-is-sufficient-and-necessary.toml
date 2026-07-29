@@ -1,0 +1,25 @@
+#:schema ../schema/guard.schema.json
+
+[govctl]
+id = "GUARD-COMPOSED-HALO-IS-SUFFICIENT-AND-NECESSARY"
+title = "composed halo is sufficient, and the under-supplied case is shown to fail"
+refs = [
+    "RFC-0001:C-CONFORMANCE",
+    "RFC-0002:C-COMPOSITION",
+]
+
+# [[RFC-0002:C-COMPOSITION]] 6. This guard is unusual and the shape is deliberate: it must
+# assert a FAILURE as well as a success.
+#
+#   * at or above the composed width, the chain MUST agree with a single-partition run;
+#   * at a width that satisfies every operator's INDIVIDUAL declaration but is below the
+#     composed width, the two MUST be shown to differ, with the differing-point count and
+#     largest divergence reported.
+#
+# A width below any individual declaration is not admissible for the second case — that
+# tests C-HALO 3 rather than this clause. And a non-differing below-composed case means the
+# input was inadequate, not that the implementation conformed, so the test must fail rather
+# than pass when the divergence does not appear.
+[check]
+command = "devenv shell -- cargo test --release --test conformance_composition -- --nocapture"
+timeout_secs = 1800

@@ -1,0 +1,18 @@
+#:schema ../schema/guard.schema.json
+
+[govctl]
+id = "GUARD-EDIT-COST-DOES-NOT-TRACK-STACK-LENGTH"
+title = "edit cost does not track stack length"
+refs = [
+    "RFC-0001:C-CONFORMANCE",
+    "RFC-0007:C-INVALIDATION",
+]
+
+# [[RFC-0007:C-INVALIDATION]] 5, which had no runner. Edit stacks differing in length by at
+# least an order of magnitude, with the number of INTERSECTING edits held constant, showing
+# that cost does not track stack length. Holding intersections constant is the operative
+# part: a measurement that let them grow with the stack would confound the two and pass a
+# system whose cost tracks exactly what the clause forbids.
+[check]
+command = "devenv shell -- cargo test --release --test conformance_invalidation -- --nocapture"
+timeout_secs = 1800

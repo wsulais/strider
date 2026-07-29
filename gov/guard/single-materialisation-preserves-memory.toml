@@ -1,0 +1,19 @@
+#:schema ../schema/guard.schema.json
+
+[govctl]
+id = "GUARD-SINGLE-MATERIALISATION-PRESERVES-MEMORY"
+title = "single materialisation preserves memory"
+refs = [
+    "RFC-0001:C-CONFORMANCE",
+    "RFC-0002:C-HALO",
+    "RFC-0002:C-MATERIALISATION",
+]
+
+# [[RFC-0002:C-MATERIALISATION]] 4 and [[RFC-0002:C-HALO]] 6. The comparison MUST be of
+# memory identity, transitively over every buffer of an attribute's representation —
+# value buffers, validity bitmap, child arrays, dictionary values. A check that compares
+# one buffer per attribute passes vacuously for a struct attribute, which has no data
+# buffers of its own, so the test asserts the transitive form or it asserts nothing.
+[check]
+command = "devenv shell -- cargo test --release --test conformance_materialisation -- --nocapture"
+timeout_secs = 1800

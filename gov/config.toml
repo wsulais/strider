@@ -32,6 +32,19 @@ version = 3
 # GUARD-SPEC-CITED-IN-TESTS enforces the test->clause citation convention, and
 # GUARD-CITATION-ANCHORS-RESOLVE catches the two classes govctl check cannot see:
 # an item anchor that outlived a clause renumber, and a bare cross-RFC citation.
+#
+# HELD OUT of default_guards until the code they check exists, on the same footing as
+# GUARD-HALO-CORRECTNESS-*, GUARD-BOUNDED-MEMORY-* and GUARD-COMMITTED-RUN-*: each names a
+# conformance test that cannot pass before there is an operator to run it against. Adding
+# any of them to the list now would gate every work item on a test that cannot exist yet,
+# which turns a guard into an obstacle instead of a check.
+#   GUARD-SINGLE-MATERIALISATION-PRESERVES-MEMORY      C-MATERIALISATION 4, C-HALO 6
+#   GUARD-SUMMARY-RESIDENCY-DOES-NOT-SCALE             C-SUMMARY 4
+#   GUARD-COMPOSED-HALO-IS-SUFFICIENT-AND-NECESSARY    C-COMPOSITION 6
+#   GUARD-PLANNER-REJECTS-WHAT-IT-MUST                 C-EXEC 2, C-HALO 2 and 7, C-COMPOSITION 4
+#   GUARD-REDUCTION-IS-INDEPENDENT-OF-CONFIGURATION    C-COMMIT 9
+#   GUARD-EDIT-COST-DOES-NOT-TRACK-STACK-LENGTH        C-INVALIDATION 5 (pre-existing gap)
+# The first work item that lands an operator MUST move the applicable ones in.
 enabled = true
 default_guards = [
     "GUARD-SPEC-CITED-IN-TESTS",

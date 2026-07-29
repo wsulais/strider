@@ -7,6 +7,7 @@ status = "accepted"
 date = "2026-07-29"
 refs = [
     "ADR-0001",
+    "RFC-0002:C-MEMORY",
     "RFC-0002:C-SUMMARY",
     "RFC-0006:C-LAYERING",
     "RFC-0006:C-RENDER",
@@ -103,9 +104,19 @@ application, and the operator engine's public traits settle at their own pace.
 
 ### Negative
 
-Aggregation, spill-to-disk and two-phase reduction must be written rather than inherited, and the
-requirements-and-satisfaction planner is original work. There is no SQL and no free Python interoperability
-in the first release, so early users script against Rust or wait.
+The requirements-and-satisfaction planner is original work, and there is no SQL and no free Python
+interoperability in the first release, so early users script against Rust or wait.
+
+This paragraph originally added aggregation, spill-to-disk and two-phase reduction to that list. Measurement
+has since split them. Aggregation and two-phase reduction *are* inheritable: an accumulator whose combination
+is associative can be handed to an engine without weakening determinism, so the engine's vectorised grouped
+aggregation and its partial-then-final split come for free, and only the accumulator is Strider's. Spill
+cannot be inherited at all. An engine's spill manager writes to a filesystem path or refuses; there is no
+interface through which a caller supplies the store. [[RFC-0002:C-MEMORY]] 4 requires spill to be obtained
+through the host storage interface, which such an engine cannot do — so an engine adapter is a **desktop host
+integration**, not a component of the portable core, and the portability gates stay where they are. That is a
+consequence of positioning rather than an argument for it, and it is the reason the positioning has a concrete
+edge rather than a stylistic one.
 
 ### Neutral
 

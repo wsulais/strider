@@ -68,3 +68,9 @@ CMakeLists.txt.user*
 result*/
 .direnv/
 .devenv/
+
+# Throwaway prototypes. Kept in the tree so they are runnable next to the governance
+# they produced, and ignored so no throwaway code — or its multi-gigabyte target/ —
+# enters this project's history or its dependency graph. Each carries a NOTES.md
+# stating the question it answered and how to delete it.
+prototypes/

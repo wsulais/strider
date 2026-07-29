@@ -1,0 +1,28 @@
+#:schema ../schema/guard.schema.json
+
+[govctl]
+id = "GUARD-PLANNER-REJECTS-WHAT-IT-MUST"
+title = "planner rejects the pipelines it is required to reject"
+refs = [
+    "RFC-0001:C-CONFORMANCE",
+    "RFC-0002:C-COMPOSITION",
+    "RFC-0002:C-EXEC",
+    "RFC-0002:C-HALO",
+]
+
+# The corpus has several obligations whose whole content is a refusal, and a refusal is the
+# one kind of requirement a passing test suite can silently never exercise. Each shape below
+# MUST be presented and the rejection confirmed, including that the diagnostic names what
+# the clause says it must name.
+#
+#   * [[RFC-0002:C-EXEC]] 2 — a pipeline whose declared requirements cannot be satisfied;
+#     the rejection names the operator and the unmet requirement.
+#   * [[RFC-0002:C-HALO]] 2 — an aggregate over a halo-bearing partitioning that was
+#     neither stripped nor rejected.
+#   * [[RFC-0002:C-HALO]] 7 — a stage declaring carry-forward whose consumer declares zero
+#     halo width, and a last carrying stage not followed by a removal; each names the stage.
+#   * [[RFC-0002:C-COMPOSITION]] 4 — a chain whose composed halo width cannot be supplied
+#     within the memory ceiling; the rejection names the chain and the width required.
+[check]
+command = "devenv shell -- cargo test --release --test conformance_rejections -- --nocapture"
+timeout_secs = 1800
