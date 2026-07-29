@@ -15,14 +15,11 @@ meet it.
 
 1. Every registered operator MUST execute within a peak memory ceiling determined only by its configured
    partition size, its declared halo width (C-EXEC 1), the declared size of any summary it builds, and the
-   size of any index it builds over a partition.
+   declared size of any index it builds over a partition.
    - That ceiling MUST NOT be a function of the dataset's total point count.
-   - A summary's size is **declarable** only where it is bounded by a function of the partition size, the
-     declared halo width, and the summary's own resolution. A size bounded only by the dataset's extent, or
-     by how many points the dataset contains, is not declarable — whatever figure is written down.
-   - For a summary on a regular grid, the declared size MUST be the count of cells the partition and its halo
-     span at that resolution, whether or not every cell is occupied. Declaring the observed occupancy instead
-     MUST NOT be treated as satisfying this: occupancy varies with density and the span does not.
+   - What makes a summary's declared size admissible, and where a summary must be built, is C-SUMMARY.
+   - An index's declared size MUST be bounded by the partition size and the declared halo width. An index
+     whose size is bounded only by the dataset is not admissible under this item.
 2. An operator whose formulation requires simultaneous access to the entire dataset, or an unbounded
    number of passes over it, MUST NOT be registered as a built-in operator.
    - This excludes iterative pairwise registration, global surface reconstruction, and whole-cloud
@@ -37,20 +34,6 @@ meet it.
 5. Conformance to (1) MUST be verified by processing inputs of at least two sizes differing by at least an
    order of magnitude, the larger exceeding available memory, and demonstrating that peak memory does not
    scale with input size.
-6. An operator MUST build a summary per partition wherever a whole-extent summary would have no declarable
-   size under (1).
-   - The per-partition summary MUST be built from the partition's own points together with the halo
-     C-HALO 3 requires for a summary-mediated neighbourhood, so that every cell the operator's later pass
-     reads from a core point holds the value the whole-extent summary would have held.
-7. Conformance to (6) MUST be verified by processing inputs of at least two sizes differing by at least an
-   order of magnitude, as (5) requires, and measuring the peak **total** summary residency across the run.
-   - That residency MUST NOT scale with input size, and MUST remain within the size declared under (1).
-   - The operator's output over multiple partitions MUST also agree with its output over a single partition,
-     on the terms C-HALO 4 states.
-   - Agreement alone MUST NOT be treated as satisfying this. An implementation that built the whole-extent
-     summary would agree too, so the residency measurement is the only part that can fail — and it MUST be
-     total rather than per-partition, because a whole-extent implementation can report a slice of a global
-     grid and show flat per-partition figures.
 
 #### Rationale
 
@@ -58,47 +41,12 @@ Stating the ceiling as a function of declared quantities rather than a fixed byt
 testable while letting an operator be configured for the machine it runs on: the test is that peak memory
 stays flat as input grows, not that it stays under a particular number.
 
-(1)'s **declarable** bullet exists because the original wording presumed every summary has a size that can be
-declared, and the commonest one does not. Two wrong answers were tried before this one and both are worth
-recording, because each looks right.
+(1)'s two later bullets name what each term of the ceiling has to be bounded by, and defer the summary case to
+C-SUMMARY because it needed more room than a bullet: one common summary has no admissible size at all unless
+it is built per partition, which is an obligation about *where* work happens rather than about how much memory
+it uses. The index term is stated here rather than deferred because it has no such subtlety — an index over a
+partition is bounded by the partition.
 
-*Bounding a summary by its resolution and the extent it covers is not a bound at all.* Extent is a property of
-the dataset: holding resolution and density fixed and growing a survey fourfold grows a fully occupied grid
-sixteenfold. A figure that scales with how large the survey is fails this clause's second bullet as surely as
-a point count does.
-
-*Declaring the occupancy of a sparse grid is not a bound either.* A grid stored sparsely holds a cell per
-occupied cell, so at a resolution finer than the point spacing its occupancy rises with density even over a
-fixed partition. Measured, a per-partition sparse summary grew by a factor of nearly three as the input grew
-fourfold, at unchanged extent and unchanged partitioning.
-
-What *is* bounded is the number of cells the partition and its halo **span** — the second bullet — because
-that is fixed by the partition, the halo and the resolution, and by nothing about the data. A sparse grid can
-never exceed it. Declaring the span rather than the occupancy makes the ceiling truthful and, usefully,
-removes any need to detect which regime a resolution falls in: the span is the declared size in both.
-
-(6) restricts *where* a summary is computed, not what an operator may compute. Nothing forbids a gridded
-ground surface at any resolution; what is forbidden is building one over the whole extent, whose span is a
-dataset property. Its bullet is the reason the restriction costs no accuracy — a per-partition summary built
-with the halo C-HALO 3 derives holds, in every cell the operator's later pass reads, the value the
-whole-extent summary would have held. Partitioning the summary is exact rather than an approximation to
-disclose. Why an analytical engine's own aggregate is the wrong place to compute such a summary is a
-comparative question, argued in the accompanying architecture decision rather than here.
-
-(7) borrows (5)'s two-size protocol rather than inventing one, and its last bullet is what makes the check
-able to fail. Output agreement is what a conformant implementation and a whole-extent one have in common, so
-residency is the only observable that separates them — and it has to be *total* residency, because an
-implementation holding one global grid can report a per-partition slice of it and show a flat figure.
-
-(3) is written conditionally on purpose. No operator failing (1) is currently admitted, so the item states
-the conditions any future admission would have to meet rather than describing something that exists — which
-keeps it an obligation on the system rather than a note about the specification's future.
-
-The exclusion in (2) is drawn at the start deliberately. Admitting one unbounded operator because it is
-valuable converts bounded memory from a property of the system into a property of a subset, and there is
-no later point at which that line is easier to hold.
-
-(5) is a gate rather than a note, and *two* sizes rather than one is the operative detail. A single large
-run proves only that memory was not exhausted on that occasion; comparing two distinguishes a bounded
-working set from a fortunate one. An order of magnitude is specified because "substantially different" is
-a judgement, and this needs to be a check."""
+Both are *declared* sizes rather than measured ones, which is what makes (5) a test of a claim rather than an
+observation. An operator that declares nothing has not satisfied (1) by using little memory on one occasion.
+"""

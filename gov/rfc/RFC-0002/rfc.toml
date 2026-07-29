@@ -27,6 +27,7 @@ clauses = [
     "clauses/C-COMPOSITION.toml",
     "clauses/C-MATERIALISATION.toml",
     "clauses/C-MEMORY.toml",
+    "clauses/C-SUMMARY.toml",
     "clauses/C-PROJECTION.toml",
     "clauses/C-APPROX.toml",
     "clauses/C-EXTENSION.toml",

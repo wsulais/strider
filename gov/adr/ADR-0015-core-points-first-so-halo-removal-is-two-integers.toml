@@ -3,7 +3,7 @@
 [govctl]
 id = "ADR-0015"
 title = "Core points first, so halo removal is two integers"
-status = "proposed"
+status = "accepted"
 date = "2026-07-31"
 refs = [
     "ADR-0016",

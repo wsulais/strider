@@ -110,10 +110,10 @@ industrial scanning can be added without reshaping it.
 - **Declarable summary size** — a summary size bounded by a function of the partition
   size, the halo width and the summary's own resolution, and of nothing about the data.
   For a grid it is the number of cells the partition and its halo **span**, not the number
-  occupied: occupancy rises with density, the span does not (`RFC-0002:C-MEMORY` 1). A
-  size bounded only by the dataset's *extent* is not declarable — extent is a dataset
-  property, and a fully occupied grid grows with it. A whole-extent summary therefore has
-  no declarable size and must be built per partition (`C-MEMORY` 6).
+  occupied: occupancy rises with density, the span does not. A size bounded only by the
+  dataset's *extent* is not declarable — extent is a dataset property, and a fully
+  occupied grid grows with it. A whole-extent summary therefore has no declarable size and
+  must be built per partition (`RFC-0002:C-SUMMARY`).
 - **Summary-mediated neighbourhood** — where a later pass reads a gridded summary an
   earlier pass built, rather than reading points. Its halo is still a *point* halo: reach
   in cells times the resolution, plus one cell where the grid does not divide the partition

@@ -1,0 +1,73 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-SUMMARY"
+title = "Summary size and where a summary is built"
+kind = "normative"
+status = "active"
+
+[content]
+text = """
+C-MEMORY 1 fixes an operator's ceiling partly by "the declared size of any summary it builds", which presumes
+every summary has a size that can be declared. The commonest one does not. A gridded ground surface is sized
+by the region it spans, and a region is a property of the dataset — so the figure an author would write down
+survives until someone runs the operator over a larger survey. Two-pass operators are where bounded memory is
+either real or merely stated, and this is what makes the difference checkable.
+
+1. A summary's size is **declarable** only where it is bounded by a function of the partition size, the
+   declared halo width, and the summary's own resolution — and by nothing about the data.
+   - A size bounded only by the dataset's extent is not declarable. Extent is a property of the dataset, and a
+     fully occupied grid grows with it.
+   - A size bounded only by how many points the dataset contains is not declarable.
+2. For a summary on a regular grid, the declared size MUST be the number of cells the partition and its halo
+   **span** at that resolution, whether or not every cell is occupied.
+   - Declaring the observed occupancy instead MUST NOT be treated as satisfying (1). Occupancy rises with
+     density; the span does not.
+3. An operator MUST build a summary per partition wherever a summary over the whole extent would have no
+   declarable size under (1).
+   - The per-partition summary MUST be built from the partition's own points together with the halo C-HALO 3
+     requires for a summary-mediated neighbourhood, so that every cell the operator's later pass reads from a
+     core point holds the value a whole-extent summary would have held.
+4. Conformance to (1) through (3) MUST be verified by processing inputs of at least two sizes differing by at
+   least an order of magnitude, as C-MEMORY 5 requires, and measuring the peak **total** summary residency
+   across the run.
+   - That residency MUST NOT scale with input size, and MUST remain within the size declared under (2).
+   - The operator's output over multiple partitions MUST also agree with its output over a single partition,
+     on the terms C-HALO 4 states.
+   - Agreement alone MUST NOT be treated as satisfying this. An implementation that built the whole-extent
+     summary would agree too, so residency is the only part that can fail — and it MUST be measured as a
+     total, because an implementation holding one global grid can report a per-partition slice of it and show
+     a flat figure.
+
+#### Rationale
+
+Two wrong definitions were tried before (1), and each is worth recording because each looks right.
+
+*Bounding a summary by its resolution and the extent it covers is not a bound.* Holding resolution and density
+fixed and growing a survey fourfold grows a fully occupied grid sixteenfold. A figure that scales with how
+large the survey is fails C-MEMORY 1's independence from the dataset as surely as a point count does.
+
+*Declaring the occupancy of a sparse grid is not a bound either.* A grid stored sparsely holds a cell per
+occupied cell, so at a resolution finer than the point spacing its occupancy rises with density even over a
+fixed partition — measured, a per-partition sparse summary grew by nearly a factor of three as the input grew
+fourfold, at unchanged extent and unchanged partitioning.
+
+(2) is what does work, and its usefulness goes beyond being true. The span is fixed by the partition, the halo
+and the resolution, and a sparse grid can never exceed it — so declaring the span makes the ceiling truthful.
+It also removes any need to decide which regime a resolution falls in: coarse grids saturate and fine ones do
+not, but the span is the declared size in both, so no implementation has to detect the boundary and no clause
+has to define it.
+
+(3) restricts *where* a summary is computed, not what an operator may compute. Nothing here forbids a gridded
+ground surface at any resolution; what is forbidden is building one over the whole extent, whose span is a
+dataset property. Its bullet is why the restriction costs no accuracy — a per-partition summary built with the
+halo C-HALO 3 derives holds, in every cell the later pass reads, the value the whole-extent summary would have
+held, so partitioning the summary is exact rather than an approximation to disclose. Why an analytical engine's
+own grouped aggregate is the wrong place to compute such a summary is a comparative question, argued in the
+accompanying architecture decision.
+
+(4) borrows C-MEMORY 5's two-size protocol rather than inventing one, and its last bullet is what makes the
+check able to fail. Output agreement is what a conformant implementation and a whole-extent one have in
+common, so residency is the only observable that separates them — and it has to be a total, because an
+implementation holding one global grid can report a per-partition slice and show a flat figure while holding
+the whole thing."""

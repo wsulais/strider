@@ -21,8 +21,7 @@ the definition belongs here rather than with release policy.
      [[RFC-0003:C-COMMIT]] 5 requires for its attribute rather than by whichever was convenient, and that
      it conforms to [[RFC-0003:C-COMMIT]] 7 in full where that route is associative accumulation;
    - that it does not rewrite attributes it passes through (C-MATERIALISATION 1);
-   - that any summary it builds is bounded as C-MEMORY 1 requires, and built per partition where C-MEMORY 6
-     requires it;
+   - that any summary it builds has an admissible declared size and is built where C-SUMMARY requires;
    - that it declares its output approximate where it diverges (C-APPROX 1).
 2. An operator that has not been assessed against every item of (1) MUST be recorded as unverified.
    - Partial assessment MUST NOT be recorded as verification.
@@ -34,7 +33,7 @@ operator can violate *silently* — an under-declared halo, an unbounded working
 read, a reduction whose answer moves with the scheduler or whose accumulation quantum is unstated, an
 attribute rewritten for no reason, an undisclosed approximation. Each fails without an error, which is why none can be left to whoever writes the next
 operator to notice. Where an item has a mandated verification — C-HALO 4 and 6, C-MEMORY 5,
-[[RFC-0003:C-COMMIT]] 9, C-MATERIALISATION 4, C-MEMORY 5 and 7, C-COMPOSITION 6 — what the assessor confirms
+[[RFC-0003:C-COMMIT]] 9, C-MATERIALISATION 4, C-MEMORY 5, C-SUMMARY 4, C-COMPOSITION 6 — what the assessor confirms
 is that the verification was run and passed; where none exists, the assessor is the check.
 
 The reduction item asks for the property *and* the route, which looks redundant and is not. There are two

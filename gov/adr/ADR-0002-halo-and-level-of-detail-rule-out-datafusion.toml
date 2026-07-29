@@ -7,6 +7,7 @@ status = "accepted"
 date = "2026-07-29"
 refs = [
     "ADR-0001",
+    "RFC-0002:C-SUMMARY",
     "RFC-0006:C-LAYERING",
     "RFC-0006:C-RENDER",
 ]
@@ -26,8 +27,18 @@ Cropping to an area of interest is filter pushdown into a scan, and octree node 
 structurally the same mechanism as Parquet row-group pruning. Voxelisation and decimation are grouped
 aggregation on quantised coordinates. Canopy height models, minimum-elevation rasters and the first
 pass of morphological ground filters are all grouped aggregation on a cell identifier. Height above
-ground and the second pass are a broadcast join against a small summary. Joins to cadastral or
-inventory tables are the native case.
+ground and the second pass are a join against that summary. Joins to cadastral or inventory tables are
+the native case.
+
+That reading was too generous about the summary, and a later prototype measured why. A gridded ground
+surface is only broadcastable while it is coarse: its size is the number of cells it spans, so holding
+resolution and density fixed and growing a survey fourfold grows the summary sixteenfold, and at a
+resolution finer than the point spacing there is no whole-extent size to declare that survives a larger
+dataset. So the second pass is a join against a summary whose extent must itself be partitioned — which
+means the operation is a *partition-wise* two-pass computation with a halo, not two relational steps.
+The obligations that came out of that measurement are in [[RFC-0002:C-SUMMARY]]; what matters here is
+that it strengthens this decision rather than qualifying it. The one operation that looked most
+comfortably relational turns out to need the partition-wise machinery too.
 
 Two capabilities are genuinely absent.
 
@@ -110,7 +121,15 @@ component.
 Reversal cost is low in the intended direction and high in the other. Adding the SQL component later is
 additive and touches nothing existing; extracting a query-engine dependency from underneath established
 spatial and operator traits would be a rewrite, which is why the dependency direction is specified
-normatively rather than left as a convention."""
+normatively rather than left as a convention.
+
+Later measurement narrowed what the deferred component would gain and widened what it would cost, in the
+same direction. Reduced level of detail and approximate disclosure both turned out to be expressible
+through an engine's ordinary extension points, so two of the three capabilities this decision called
+absent were overstated. But the halo gap proved worse than described — an engine's optimiser will
+reshuffle a spatial partitioning it has no reason to respect, from beneath any node in the subtree — and
+the summary finding above removes the one operation that looked delegable wholesale. The decision stands
+on a smaller set of reasons than it was written with, and on firmer ones."""
 
 [[content.alternatives]]
 text = "DataFusion beside the engine: spatial access, operator engine and renderer take no query-engine dependency; a SQL surface is a separate optional component layered on top, deferred past the first release"

@@ -3,7 +3,7 @@
 [govctl]
 id = "ADR-0016"
 title = "A composed halo, or an exchange, but never each operator's own width alone"
-status = "proposed"
+status = "accepted"
 date = "2026-07-31"
 refs = [
     "ADR-0015",

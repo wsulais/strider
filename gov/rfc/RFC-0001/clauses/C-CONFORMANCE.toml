@@ -16,16 +16,16 @@ contingent on the check instead of on confidence.
    - Where a property is verified only under stated conditions, those conditions MUST be published with the
      assertion.
    - Where a definition in `CONTEXT.md` and a normative clause disagree, the clause governs.
-   - The verifications themselves live with the properties they establish: bounded memory at
-     [[RFC-0002:C-MEMORY]] 5, halo correctness at [[RFC-0002:C-HALO]] 4, halo removal without rewriting at
-     [[RFC-0002:C-HALO]] 6, halo carry-forward at [[RFC-0002:C-HALO]] 7, partition-local summaries at
-     [[RFC-0002:C-MEMORY]] 7, composed halo sufficiency at [[RFC-0002:C-COMPOSITION]] 6, single materialisation at
-     [[RFC-0002:C-MATERIALISATION]] 4, reproducibility at
-     [[RFC-0003:C-COMMIT]] 6, reduction determinism across configurations at [[RFC-0003:C-COMMIT]] 9,
-     projection transparency at [[RFC-0002:C-PROJECTION]] 3, and operator conformance at
-     [[RFC-0002:C-VERIFIED]].
+   - A release MUST be able to name, for each property it asserts, the verification that established it and
+     the conditions under which it ran.
 
 #### Rationale
+
+The bullet requiring a release to *name* its verifications replaced a list of them. A list in a normative
+clause is a directory rather than an obligation: it carried nothing a reader could fail, it had already fallen
+behind the corpus twice, and every verification obligation elsewhere already sits beside the property it
+establishes. Requiring the release to produce the mapping puts the burden where it can be checked and removes
+a thing that rots.
 
 The obligation is deliberately about *assertion* rather than about achievement. Nothing here requires a
 release to have any particular property; it requires that whatever it claims has been checked. That is the
