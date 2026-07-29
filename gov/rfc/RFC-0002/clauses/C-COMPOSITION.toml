@@ -38,12 +38,12 @@ argued in the accompanying architecture decision; the obligation is here, and it
      and so declares its output approximate, MUST NOT be admitted to a dependent chain evaluated by
      composed halo, because its reach is unbounded and no sum exists.
 4. A planner MUST reject a pipeline whose composed halo width it cannot supply within the memory ceiling
-   ([[RFC-0002:C-MEMORY]] 1), naming the chain and the width required.
+   ([[RFC-0002:C-MEMORY]] 1 and 3), naming the chain and the width required.
    - It MUST NOT satisfy a composed halo width by supplying a halo whose size is a function of the
      dataset's total point count.
    - Halo exchange MUST NOT be used to evade that ceiling either: the intermediate outputs it holds between
      operators are subject to the same bound, and MUST be spilled through the host storage interface
-     ([[RFC-0002:C-MEMORY]] 4) rather than accumulated in memory.
+     ([[RFC-0002:C-MEMORY]] 7) rather than accumulated in memory.
 5. The arrangement used and the halo width supplied MUST be recorded in the evaluation configuration
    ([[RFC-0003:C-COMMIT]] 4).
 6. Conformance to (2) and (3) MUST be verified, for a dependent chain of at least two operators declaring

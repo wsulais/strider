@@ -152,12 +152,13 @@ The position bullet exists because (1) defines membership geometrically, which m
 changing membership without touching any label — a path a clause naming only the label could not describe.
 But it is stated as a duty to keep the volume and the positions *together*, not as a prohibition on moving
 points, because the prohibition would have been wrong twice over: it would have forbidden the partition-wise
-reformulations C-MEMORY 2 expressly admits, and it would have treated a whole class of safe operators as
+reformulations C-MEMORY 5 expressly admits, and it would have treated a whole class of safe operators as
 unsafe.
 
-Which alterations can keep the bounds and the positions together, why the safe class is the isometries, and
-what this deliberately leaves unsettled about the shape of a bounding volume, are argued in the accompanying
-architecture decisions rather than here.
+Which alterations can keep the bounds and the positions together is argued in the accompanying architecture
+decision rather than here. Why the safe class is the isometries is argued in [[RFC-0003:C-PARTITIONING]] 4's
+rationale, alongside the permission it qualifies. Whether a partition's bounds may carry an *orientation* is
+settled by nothing: C-EXEC 4 leaves it open and no decision has been taken on it.
 
 The non-disjointness rule (2) exists because the failure is silent. An aggregation over a halo
 partitioning does not fail, log, or crash — it returns a plausible number, too large in proportion to the

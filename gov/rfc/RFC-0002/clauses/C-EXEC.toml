@@ -18,7 +18,9 @@ every partition boundary or forces the whole dataset into memory. Requirements a
    - the **spatial partitioning** it requires;
    - the **minimum halo width** it requires (C-HALO);
    - the **attributes** it reads (C-PROJECTION);
-   - the **number of passes** it makes over its input.
+   - the **number of passes** it makes over its input;
+   - the **auxiliary structures** it builds — summaries, indices, any working state that is not the points themselves — and for each, whether it is released when the operator finishes or must outlive it, and which later operator needs it.
+   - A structure released when the operator finishes MUST NOT be declared as outliving it. The declaration is what C-MEMORY 3 derives liveness from, and an operator claiming its structure is needed downstream when it is not inflates every pipeline it appears in.
 2. The planner MUST insert operations that satisfy each declared requirement before the operator
    executes.
    - It MUST reject a pipeline whose declared requirements cannot be satisfied, and the rejection MUST
@@ -30,15 +32,18 @@ every partition boundary or forces the whole dataset into memory. Requirements a
    - An operator MUST NOT emit output that requires Strider-specific decoding before an unrelated Arrow
      consumer can read it.
 4. A stream's spatial properties — **partition bounds**, **level of detail**, **source partition
-   identity**, and **halo width** — MUST be properties of the *stage* that produces the stream, and MUST
-   NOT be fields attached to individual records or batches.
+   identity**, **halo width**, and a **point bound** for the partition — MUST be properties of the *stage*
+   that produces the stream, and MUST NOT be fields attached to individual records or batches.
    - **Partition bounds** are the volume the stage's partition is responsible for. They are NOT the extent
      of the points the stage carries: halo points lie outside the bounds by construction, so a stage's
      bounds MUST NOT be computed from the positions it holds.
    - Bounds MUST state, for each face, whether that face is **closed** or **open**, so that membership
      (C-HALO 1) is decidable from the bounds alone. A partitioning MUST assign closedness so that every
      position within its extent lies within the bounds of exactly one of its partitions.
-   - A planner MUST be able to determine every such property without reading point data.
+   - Bounds and the positions membership is decided against MUST be expressed in the same frame. Where a
+     partitioning is established in a frame related to the source's by an isometry
+     ([[RFC-0003:C-PARTITIONING]] 4), a stage MUST NOT hold bounds in one frame and coordinates in the other.
+   - A planner MUST be able to determine every such property without reading point data. The **point bound** is an upper bound on how many points the stage carries — the partition together with its halo, which is the set handed to an operator — obtained as C-MEMORY 2 requires; it is listed here because C-MEMORY 1 lets an operator compute its memory bound from it, and that computation would otherwise rest on a quantity no stage supplies. A stage with no index over its own output derives it from the stage it consumes, on the terms C-MEMORY 2 states.
    - **Halo membership** is not an exception, though it is carried per point. It is *derived* from those
      bounds together with the point's own position, and the column C-HALO 1 requires caches that derivation
      rather than introducing a property of the record.
@@ -107,6 +112,15 @@ isolation — each operator tested alone satisfies everything it declares, and t
 composition — so the verification has to include the evaluator. But the crates that must not depend on a
 query engine cannot host such a test, so the obligation is placed on whatever integrates the evaluator, and
 falls away entirely where nothing is delegated.
+
+(1)'s structure bullet exists because C-MEMORY 3 composes an operator's memory bound across a pipeline, and composing it needs to know when each structure stops being needed. Deriving that from the declaration rather than from a timing claim is what keeps it checkable: an operator says what it builds and who else needs it, which is a structural fact of the same kind as which attributes it reads, and its consequence is visible in a peak that either fits a budget or does not. Getting the declaration wrong is not a small error — a structure wrongly declared as needed downstream stays live across everything after it, and the composed peak silently rises to the sum, which is the figure C-MEMORY 3 exists to avoid.
+
+(4)'s frame bullet closes a hole that only opens once more than one frame exists. Membership is a comparison
+between a position and a volume, and a comparison between quantities expressed in different frames is not wrong
+so much as meaningless — every point would be classified against the wrong space, and C-HALO 6's agreement
+check would faithfully confirm whichever answer it was handed. With a single frame the requirement is vacuous,
+which is why it went unstated; the moment a partitioning may sit in a rotated frame it is the premise everything
+else assumes.
 
 (4) says **partition bounds** and defines them, where an earlier wording said "bounding volume" and left the
 choice between two volumes open. The distinction is load-bearing rather than pedantic: a halo-bearing stage's

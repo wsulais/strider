@@ -48,9 +48,11 @@ points that changes no information content, and — because LAS and COPC store c
 must disclose ([[RFC-0003:C-COMMIT]] 7). Transforming the *query region* instead costs a handful of operations. This is what QGIS does, and it is
 also why QGIS's edits are never orphaned by reprojection, the finding that closed [[RFC-0005:C-IDENTITY]].
 
-Vertical datums are where this stops being an engineering preference. Ellipsoidal and orthometric heights
-differ by tens of metres, varying geographically, so a vertical datum error offsets every canopy height by a
-smooth plausible constant — no artefact, no error, and a uniformly wrong timber inventory.
+Vertical datums are where this stops being an engineering preference, and [[RFC-0005:C-VERTICAL]]'s preamble
+states the failure it turns on. What bears on the decision is that this is the case where a *sensible default*
+stops being available. For a horizontal system, assuming the common one is defensible and usually right; for a
+vertical one the same assumption is a silent tens-of-metres offset, so the decision has to refuse where it
+would ordinarily accommodate.
 
 A final problem emerged from admitting two backends: a pipeline that produces one answer with the
 full-featured implementation and a slightly different one with the constrained implementation is precisely
@@ -92,9 +94,9 @@ Why **queries** are transformed and not the points:
 
 Why vertical datums **fail rather than convert**:
 
-- **The error is undetectable by inspection.** A horizontal mismatch puts data visibly in the wrong place.
-  A vertical datum mismatch yields a correctly shaped surface at the wrong elevation, and every derived
-  height inherits a constant nothing in the output reveals.
+- **The error is undetectable by inspection**, on the terms [[RFC-0005:C-VERTICAL]] sets out. That is what
+  makes refusal proportionate rather than obstructive here, and it is why no warn-and-continue mode is
+  offered: a warning is only useful to someone who can then check, and there is nothing to check against.
 - **Absence is as dangerous as disagreement.** LAS files frequently declare no vertical reference, and
   treating absence as agreement is the same failure by a shorter route.
 - **It is the third obligation of this shape.** [[RFC-0002:C-HALO]] 2 forbids silent over-counting,
@@ -128,8 +130,9 @@ be classifiable as a datum shift or not, which is a judgement the interface has 
 implicit. Users arriving from CloudCompare will expect reprojection to be a default rather than an operator
 they add.
 
-A constrained host cannot produce a committed result involving a datum shift — accepted, because such hosts
-are out of scope and preview use remains available, previews being already declared approximate.
+The exclusion [[RFC-0005:C-BACKEND]]'s rationale draws out — no committed datum shift on a constrained host —
+is accepted here rather than merely noted. It is the price of the tiering, and it is payable because the
+constrained target exists to keep the code honest rather than to serve users today.
 
 ### Neutral
 
@@ -159,7 +162,7 @@ pros = [
 ]
 cons = [
     "Two transformation implementations to maintain against one interface",
-    "A constrained host cannot produce a committed result involving a datum shift",
+    "Committed datum shifts become unavailable wherever the reference backend cannot be linked",
     "Users expecting 'reproject my cloud' as a default get an explicit operator instead",
 ]
 

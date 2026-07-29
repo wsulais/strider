@@ -20,8 +20,8 @@ context = """
 The renderer has to draw into something the graphical toolkit controls, and the obvious approaches were
 foreclosed by constraints already in force.
 
-Licensing decided the shape before graphics did. Qt's open-source terms are LGPL-3.0 and GPL-3.0, and
-[[RFC-0001:C-LICENSE]] 4 forbids any dependency beyond `Apache-2.0 OR MIT` beneath a library crate. Qt
+Licensing decided the shape before graphics did. Qt is offered under copyleft terms — LGPL-3.0 or GPL-3.0 —
+and [[RFC-0001:C-LICENSE]] 4 admits nothing beyond `Apache-2.0 OR MIT` beneath a library crate. Qt
 therefore cannot appear beneath the renderer at all; it belongs only in the application, which is
 `AGPL-3.0-or-later`. This reframed the question entirely: not how Rust talks to Qt, but what surface the
 renderer accepts such that the application can obtain one from Qt.
@@ -66,7 +66,7 @@ by the same contract and adopted when depth-insensitive overlay is wanted. The o
 
 Why the toolkit is **confined to the application**:
 
-- **Licensing forbids the alternative.** Qt's open-source terms are LGPL-3.0 and GPL-3.0, beyond what
+- **Licensing forbids the alternative**, since Qt's copyleft terms sit outside what
   [[RFC-0001:C-LICENSE]] 4 permits beneath a library crate.
 - **The commercial-licence loophole is closed deliberately.** A commercial Qt licence would remove the
   copyleft obligation for this project while leaving every adopter of an `Apache-2.0 OR MIT` crate
@@ -95,10 +95,10 @@ Why **direct presentation first**, and offscreen compositing second:
   near surface. Such content must be renderer-drawn regardless, which is what
   [[RFC-0006:C-OVERLAY]] 1 requires. What overlay genuinely enables is depth-insensitive chrome:
   valuable, not urgent.
-- **The transition costs nothing later because it is admitted now.** [[RFC-0006:C-SURFACE]] 4 requires
-  the renderer to accept a target it does not present, since rendering into a host-composited target is a
-  superset of presenting to a surface. Adopting offscreen compositing therefore changes the application,
-  not the renderer's published contract.
+- **The transition costs nothing later because it is admitted now.** [[RFC-0006:C-SURFACE]] 4 requires the
+  renderer to accept a target it does not present, on the containment argument that clause's rationale gives.
+  What is decided here is the *timing*: the cheap moment to admit both is before either is implemented, and
+  after that the renderer's published contract would have to change.
 
 `cxx-qt` is the intended binding, and is deliberately *not* governed: it lives entirely in the
 application, so it is a reversible implementation choice rather than a contract, and a churning binding

@@ -101,10 +101,11 @@ industrial scanning can be added without reshaping it.
   are drawn. Declared by the operator, supplied by the planner. Under-declaring it
   is a correctness bug, not a performance bug (`RFC-0002:C-HALO` 3).
 - **Core point** — a point whose position lies within the partition's own **bounds**,
-  rather than one drawn into its halo. Membership is *geometric*, not assigned: bounds are
-  closed below and open above on every axis — except a limit of the partitioning itself,
-  which is closed, so a point on the dataset's outer face is not lost — and the count is
-  per partitioning, so a point is core of one partition per level of detail. Operators read core and halo points
+  rather than one drawn into its halo. Membership is *geometric*, not assigned: the bounds
+  state each face as closed or open, and a partitioning assigns closedness so every position
+  in its extent lies in exactly one partition — which is what stops a point on the dataset's
+  outer face belonging to none. The count is per partitioning, so a point is core of one
+  partition per level of detail. Operators read core and halo points
   alike and emit only core points, which is what makes a partitioned run's point count
   equal a whole-dataset run's (`RFC-0002:C-HALO` 1).
 - **Halo attribute** — the boolean column marking which points are halo. A **cache** of
@@ -215,12 +216,42 @@ industrial scanning can be added without reshaping it.
   "scale" names a digit count, and reads as a claim that the stored value has been
   multiplied. Nothing in a result is scaled — the quantum is a step size in the
   attribute's own unit. *Quantisation* stays the name of the process.
+- **Computed memory bound** — an operator's own upper bound on the memory it will hold for
+  a partition, calculated from its configuration plus the partition's bounds, halo and
+  point bound, without reading point data. Replaces a declared *figure*, which cannot be
+  right across the partition sizes worth using: the two admissible bounds for a gridded
+  structure — the region it spans and the points it can hold — were measured more than two
+  orders of magnitude apart, so one number fixed in advance sits somewhere in that gap for
+  every partition it ever sees (`RFC-0002:C-MEMORY` 1).
+- **Point bound** — an upper bound on how many points a region holds, obtained by summing
+  the counts a spatial index records for the nodes it intersects. Exact where the region
+  aligns to node boundaries and an over-count otherwise, so it is a *bound* and not an
+  estimate — which is what keeps a computed cost a ceiling. Its tightness depends on how
+  deep into the hierarchy the planner reads, so the level used is recorded with it
+  (`RFC-0002:C-MEMORY` 2).
+- **Pipeline peak** — for one partition and one order of the operators, the greatest total
+  over any step of the bounds counting at that step. Liveness comes from the *declaration*
+  `RFC-0002:C-EXEC` 1 requires — which structures outlive an operator and which later
+  operator needs them — never from a claim about timing, because a timing claim is not
+  checkable. Not the sum over all operators, which charges a pipeline for phases it never
+  holds at once; measured, the sum exceeded the peak by 1.50 to 1.61 times
+  (`RFC-0002:C-MEMORY` 3).
+- **Invariance to partitioning** — the property that lets a planner size partitions to the
+  machine rather than to a constant. A sufficient halo makes a partitioned neighbourhood
+  computation agree with its whole-dataset equivalent, and an associative accumulation gives
+  the same total however partials were grouped, so partition size does not reach the result.
+  Established against the input in a *single* partition, never by comparing two chosen
+  partitionings — two badly chosen ones can agree with each other
+  (`RFC-0003:C-PARTITIONING` 1).
 - **Adaptive partitioning** — the cache reshaping partitions to match how a user is
-  working: merging while orbiting one tree, subdividing for finer working sets.
-  **Permitted and wanted for preview and rendering; forbidden for committed runs**,
-  because an adaptive partition has no stable identity and identity is what fixes
-  reduction order (`RFC-0003:C-PARTITIONING`). Never *subdivide* to get neighbours —
-  that is the planner's job from declared halo width.
+  working: merging nodes while the camera orbits one tree, subdividing them for a finer
+  working set. Permitted for preview and rendering, forbidden for a committed run — but not
+  because it would change the answer. A partitioning is free to vary where every operator is
+  invariant to it, and most are. It is forbidden because a partitioning that followed a
+  camera cannot be *accounted for*: it is not expressible as a recorded partition size, so
+  the run cannot be replayed or defended (`RFC-0003:C-PARTITIONING` 1, 2). Never *subdivide*
+  to get neighbours — that is the planner's job from the declared halo width
+  (`RFC-0003:C-PARTITIONING` 3).
 - **Projection** — the set of attributes a pipeline actually reads, computed from
   operators' declarations and pushed into the source. Free, since `C-EXEC` 1 already
   requires the declaration. Must not change results — which makes it a *test* for

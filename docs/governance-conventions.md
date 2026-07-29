@@ -28,7 +28,7 @@ rather than collecting in a central conformance clause:
 
 | claim | verification |
 |---|---|
-| bounded memory | `RFC-0002:C-MEMORY` 5 |
+| bounded memory | `RFC-0002:C-MEMORY` 8 |
 | halo correctness | `RFC-0002:C-HALO` 4 |
 | projection transparency | `RFC-0002:C-PROJECTION` 3 |
 | reproducibility | `RFC-0003:C-COMMIT` 6 |

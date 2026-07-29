@@ -1,0 +1,135 @@
+#:schema ../schema/adr.schema.json
+
+[govctl]
+id = "ADR-0019"
+title = "An operator computes its memory bound; the planner schedules against it"
+status = "proposed"
+date = "2026-08-07"
+refs = [
+    "RFC-0002:C-MEMORY",
+    "RFC-0003:C-COMMIT",
+    "RFC-0003:C-PARTITIONING",
+    "RFC-0002:C-HALO",
+    "RFC-0002:C-EXEC",
+    "RFC-0002:C-SUMMARY",
+    "ADR-0002",
+    "ADR-0016",
+    "ADR-0014",
+]
+
+[content]
+context = """
+[[RFC-0002:C-MEMORY]] 1 used to bound an operator partly by two figures an author wrote down: the declared size of any summary it builds, and of any index it builds over a partition. A throwaway prototype exercised that arrangement against a real processing chain and it did not survive.
+
+**What was exercised, and on what.** The chain is taken from a working mangrove crown-measurement pipeline: read at a reduced level of detail, build a minimum-elevation surface on a half-metre grid, compute height above ground from it, test a fixed-radius neighbourhood for geometric features, then find connected components on a two-centimetre voxel grid and measure each crown. That pipeline processes tiles with a hardcoded one-metre margin and forbids running tiles in parallel. **The chain is real; the data is not.** Every figure below comes from one synthetic twelve-metre plot with generated crowns of about 0.175 m radius at one planting density, one vertical relief and one clumping pattern. The shapes should transfer; the magnitudes should not be relied on.
+
+**Why a span is the wrong bound for one grid and the only bound for another.** A two-dimensional ground surface fills nearly all of its cells once those cells are wider than the spacing of the returns beneath them, so for that grid the span is both honest and achievable. A three-dimensional voxel grid at two centimetres cannot saturate, because a crown is foliage in air: across the tile sizes measured its occupancy ran from 0.36 to 1.05 per cent, varying with tile size and with whether the vertical extent was taken per tile or once for the plot. At the tile extent the existing pipeline permits — a hundred metres of span with ten metres of vertical range — requiring the span would declare 12.5 GB at a byte per voxel, or 1.6 GB at a bit. That is a *ceiling*, not an observed peak, and it is the figure that forces the existing pipeline to cap its tiles and run them serially. This is the argument the decision rests on, and it is two orders of magnitude, not a marginal call.
+
+**Why summing over operators is the wrong composition.** The chain has phases: the ground surface is dead once heights are written, the feature index dead once the vegetation rule has run, and only then is the voxel grid built. Measured against a peak computed over cuts of the operator graph, the sum over-declared by **1.50 to 1.61 times** across partition sizes from two to forty metres — a budget spent on structures the pipeline never holds at once.
+
+**Why a computed cost stays a bound rather than becoming an estimate.** The cost needs a point count for the partition, and one can be *bounded* without reading point data: a spatial index records a count per node, so summing the nodes a region intersects over-counts at worst. Its tightness depends sharply on which level is read, and against a clumped distribution the penalty is large — measured, a one-metre node gave a bound about five per cent over the actual count — 1.05 times — for a four-metre partition with the composed halo, while a four-metre node was 4.7 times out on the same partition and 29.7 times out on a two-metre one. Exactness under node alignment follows from the construction but was never exercised: every measured configuration was unaligned.
+
+**Two limits worth carrying forward.** The chain's required halo depends on lattice *offset*, not only on width: the same chain needed 0.125 m of margin when tile boundaries coincided with the ground grid and 0.250 m when shifted half a cell. A planner choosing a partition size is also choosing an offset, so partition freedom interacts with halo sufficiency even though the composed sum covers both cases. And the per-operator ceiling stopped at the operator: the quantity that exhausts is held by the process, and a pipeline conforming everywhere it was asked to could still be undone by how many tiles a scheduler chose to run together. That is the gap [[RFC-0002:C-MEMORY]] 4 now closes, and it is why the concurrency bound is a sum."""
+decision = """
+An operator computes an upper bound on the memory it will hold, from its own configuration and a description of the partition, without reading point data. The planner composes those bounds over the pipeline graph and schedules against a budget. [[RFC-0002:C-MEMORY]] 1 through 4 carry the obligations, and their rationales carry the measurements that justify each one; [[RFC-0003:C-PARTITIONING]] 1 carries the partitioning freedom that follows, since a planner able to size partitions to a budget is a planner choosing the partitioning. This record holds what a clause rationale has no place for: the alternatives that were weighed and why each was set aside, the claim the measurements turned out not to support, and the limits of the plot everything was measured on.
+
+Why the **operator** and not the planner: whether a structure can approach its span is a fact about what the operator computes. A ground surface saturates and a voxel grid over foliage cannot, and the difference is two orders of magnitude. A planner given only a cell size and an extent has no way to tell them apart.
+
+Why the bound is **computed** rather than declared: only a computed one is falsifiable. Evaluate it for a particular partition, run that partition, and the observed peak either fits or it does not — a test [[RFC-0002:C-MEMORY]] 8 now mandates. A written-down number offers nothing to hold it against.
+
+Why the invariance that licenses partition freedom is **not circular**: because neither half of it is established by comparing two chosen partitionings, which would prove nothing. The two halves are grounded differently, and conflating them is the easy mistake. For a neighbourhood operator the ground is a privileged reference: [[RFC-0002:C-HALO]] 4 compares against the input in a single partition, which has no boundaries to be wrong about. For a reduction there is no such reference — [[RFC-0003:C-COMMIT]] 9 compares partitionings against each other, which on its own would prove nothing — and what carries the case instead is algebraic: an associative form gives the same total however partials were grouped ([[RFC-0003:C-COMMIT]] 5, [[ADR-0014]]), so [[RFC-0003:C-COMMIT]] 8's independence from partition size follows by argument, with 9 checking that the implementation has it. An earlier draft of this record collapsed both halves into the second and so claimed a reference the reduction case does not have.
+
+One thing this decision deliberately does **not** claim. It would be convenient to argue that no declared figure can be right because the cheaper representation changes within the useful range of partition sizes. The prototype does not support that: the break-even depends on what a sparse entry costs, and at the 64 bytes the cost model itself uses — chosen deliberately over an optimistic 32 — a dense occupancy bitset is cheaper at *every* partition size measured. The representation choice still belongs to the operator, and the span-versus-point-bound gap still decides the case, but the crossover argument is withdrawn."""
+consequences = """
+### Positive
+
+The planner can answer a question it previously could not: how large a partition may be for a given budget, computed without executing anything. Bounding the *process* rather than the operator is what makes parallelism safe. Without it a pipeline of this shape must forbid concurrent tiles outright, which the measured pipeline does in as many words. How much wall-clock that prohibition costs was not measured here.
+
+### Negative
+
+An operator is a larger thing to write: its author must express a memory model of their own structures and get an upper bound right, not a typical case. That falls on every operator, including simple ones whose answer is zero.
+
+**The peak is only as good as the produce-and-consume declaration, and that declaration is new.** Deriving liveness needs to know which auxiliary structures an operator builds and which later operator still needs them, which [[RFC-0002:C-EXEC]] 1 did not ask for and now does. So the residual exposure is not that the information is missing but that it can be wrong, and a wrong edge is silent. Its severity was measured by accident: a first attempt at the graph declared one operator as consuming another's *index* rather than its output points, and that single wrong edge kept the index live across the voxel grid and made the peak equal the sum exactly — the answer the graph exists to avoid, arrived at with no diagnostic. Hence the prohibition [[RFC-0002:C-EXEC]] 1 now carries on declaring a structure as outliving an operator when it does not.
+
+**An operator that cannot express a closed-form bound is now excluded from the built-in set.** Under the previous arrangement its author wrote a figure down, and any operator could supply one. [[RFC-0002:C-MEMORY]] 1's last bullet turns inability to compute a bound into ineligibility for registration. No operator has actually been excluded by it, because none has yet been written; the point is that this decision moves a whole class of operator from awkward to inadmissible, and the escape hatch [[RFC-0002:C-MEMORY]] 6 leaves is a caller distinguishing it first rather than a way to register it.
+
+The point bound's tightness is now a live concern. It depends on which level of a spatial index the planner reads, and reading finer levels costs I/O, so a planner trades index reads against sizing accuracy. Against a clumped distribution the penalty for reading too coarsely reached 29.7 times.
+
+**Partition-sizing figures should not be quoted from this record.** The budget sweep that yields a hundred-and-thirty-four-metre tile for five hundred and twelve megabytes assumes a 1.2 m vertical span and a fixed point density, both hardcoded. Real relief over that distance is several metres: at three the fitting tile falls to about ninety metres, at five to about seventy. The mechanism behind that — the grid terms scaling with the vertical span — itself holds only to about five and a half metres, beyond which the cluster term reaches the sparse bound and stops scaling with z. The *mechanism* is what this decision establishes; the numbers are illustrations from one plot.
+
+### Neutral
+
+The summary-size rules stop being an exception and become an instance: what was an obligation to declare a grid's span is now two admissible bounds, of which an operator reports the one belonging to the representation it will use, so [[RFC-0002:C-SUMMARY]] no longer has to define which regime a resolution falls into. Reporting the *smaller* of the two was drafted first and is wrong — the two representations cost different amounts per cell, so the lesser cell count can be the greater number of bytes, and the measured chain chose the span-sized representation at every partition size.
+
+Watch for the computed bound drifting into a *cost model* used to choose between plans. The obligation here is only that the figure is an upper bound, never that it is accurate enough to compare two plans by. This is the same hazard [[ADR-0002]] records for the planner growing toward cost-based reordering, and it arrives by the same route: a number that is useful for one decision being reused for a harder one.
+
+Every figure here assumes the composed halo [[ADR-0016]] permits rather than the exchange it also permits. An exchange would change the memory bound, and that interaction is unexamined."""
+
+[[content.alternatives]]
+text = "An operator computes an upper bound on its memory from its configuration and a partition description; the planner composes those over the pipeline graph and schedules against a budget"
+status = "accepted"
+pros = [
+    "Checkable — a function can be evaluated for the partition used and compared against the observed peak",
+    "Gives the planner partition sizing for a budget, which no declared number can",
+    "Liveness comes from a declared structural fact — which structures outlive the operator and who needs them — rather than from a claim about timing that nothing could check",
+    "Measured: requiring a grid's span over-declares a 3D voxel grid by more than two orders of magnitude, which is what caps tile size and forces serial processing",
+]
+cons = [
+    "Every operator author must express a memory model rather than name a size",
+    "The point bound's tightness depends on how deep into the index the planner reads, a trade-off that did not exist before",
+]
+
+[[content.alternatives]]
+text = "Keep a declared figure per summary and per index, as the clause previously required"
+status = "rejected"
+pros = [
+    "Trivial for an author to supply and trivial for a planner to consume",
+    "No memory model to write and nothing to compute",
+]
+cons = [
+    "Requiring a grid's span over-declares a 3D voxel grid by more than two orders of magnitude, making an affordable operator inadmissible",
+    "A declared number cannot be compared against anything but itself",
+]
+rejection_reason = "It is the arrangement the prototype was measuring, and each of its three failures was independent: the figure is wrong at one end of the partition range or the other, the span is the wrong bound for a grid that cannot saturate, and summing over operators charges a pipeline for phases it never holds at once. Any one would be worth a patch; together they say the shape is wrong."
+
+[[content.alternatives]]
+text = "Have the planner model memory itself, from the operator's declared settings, without asking the operator"
+status = "rejected"
+pros = [
+    "Operators stay small; no memory model to write per operator",
+    "One implementation of the model rather than one per operator",
+]
+cons = [
+    "The planner cannot know whether a given grid saturates — a ground surface does and a voxel grid over foliage cannot, and the difference is two orders of magnitude",
+    "Every new structure an operator might build would need the planner taught about it, so the extension point becomes the planner rather than the operator",
+]
+rejection_reason = "It puts the decision where the knowledge is not. Whether occupancy can approach a span is a fact about what the operator computes, and a planner given only a cell size and an extent would have to guess — in the direction that either over-declares affordable work or under-declares work that then exhausts memory."
+
+[[content.alternatives]]
+text = "The operator declares only which REGIME its structure is in — whether it can saturate its span — and the planner computes the bytes from that plus the cell size"
+status = "rejected"
+pros = [
+    "Keeps operators small: one bit of knowledge rather than a memory model",
+    "Puts the fact where it is known while keeping the arithmetic in one place, so a bug in the byte arithmetic is fixed once",
+    "Defeats both objections to having the planner model memory alone, since it is no longer guessing the regime",
+]
+cons = [
+    "The regimes are not a closed set: a compressed grid, a hierarchical one, or a run-length encoded occupancy mask are none of saturating-or-not, and each would need the planner taught",
+    "The planner would still need the vertical extent, the per-axis resolutions and the entry size for whichever representation, so the declaration is only nominally smaller",
+]
+rejection_reason = "It is the strongest of the rejected options and was not weighed in an earlier draft of this record. It fails on extensibility rather than on knowledge locality: a regime tag closes the set of structures an operator may build, so the extension point moves back to the planner the first time an operator wants a representation the tag cannot name. Having the operator return bytes leaves that open, and the arithmetic it duplicates is a few lines."
+
+[[content.alternatives]]
+text = "Enforce the budget at run time instead of predicting it: account allocations against a memory pool and spill or refuse when the pool is reached"
+status = "rejected"
+pros = [
+    "No memory model per operator, and no bound to get right — the accounting is exact because it observes what was actually allocated rather than predicting it",
+    "It is what mainstream engines do, and effectively what the pipeline this chain came from does by capping tile span and refusing to parallelise",
+    "Already partly admitted: [[RFC-0002:C-MEMORY]] 7 permits spill as a strategy, and [[RFC-0002:C-MEMORY]] 9's first bullet accepts refusal as enforcement",
+]
+cons = [
+    "It cannot answer how large a partition may be for a given budget, because the answer only exists once the work has been attempted",
+    "Refusal arrives after the work has begun, so a pipeline that will not fit is discovered by failing rather than by being rejected — the opposite of [[RFC-0002:C-EXEC]] 2's named, pre-execution rejection",
+    "A pool shared between concurrently evaluated partitions makes the point at which any one refuses depend on the scheduler, which is what [[RFC-0002:C-MEMORY]] 3 keeps out of a result",
+]
+rejection_reason = "It is rejected for what it cannot answer rather than for being unsound — as accounting it is strictly more accurate than any bound, because it measures instead of predicting. But the deliverable is a decision taken *before* anything executes: how large a partition may be, and how many may run at once, for the memory this machine has. Runtime accounting has no answer until the attempt is under way, so a planner relying on it must either guess and retry or serialise to stay safe, which is exactly the position the measured pipeline is already in. Note the two are not exclusive and this decision does not exclude them: a computed bound admits and sizes the pipeline, and spill under [[RFC-0002:C-MEMORY]] 7 remains available to whatever exceeds its own prediction."

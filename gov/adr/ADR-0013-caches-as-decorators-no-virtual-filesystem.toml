@@ -51,11 +51,13 @@ attributes one pipeline reads cannot serve a pipeline reading one further attrib
 projection fragments the cache per distinct projection, while keying on the whole record discards the benefit
 projection exists for.
 
-The genuine gap was integrity rather than capability. [[RFC-0005:C-BINDING]] 5 detects a *stale* entry, not a
-*modified* one, and a cache in shared storage can be altered by something other than this software. The
-consequences are not uniform: a tampered baked overlay would change a delivered result while
-[[RFC-0007:C-BAKE]] 2 asserts baking cannot change results, and a corrupted cached byte range feeding a
-committed run changes output silently."""
+The genuine gap was integrity rather than capability, and it is stated in full at
+[[RFC-0004:C-INTEGRITY]]: staleness detection does not detect alteration, and the consequences of an altered
+entry differ by what the entry is. Two things about that gap bear on this decision rather than on the
+obligation. It is a gap in a *placement* — it exists because caches live where other software can reach them,
+which is a consequence of the decorator arrangement below and not of any rule. And it was found by looking
+for what the arrangement failed to cover rather than for what it could not do, which is why capability was
+never the question."""
 decision = """
 Caches are decorators over the host interfaces already specified, keyed per attribute, and integrity-verified
 only where an entry contributes to a committed run. The obligations are written in
@@ -76,10 +78,10 @@ length with batched multi-range support, a cache is simply an implementation of 
 another. Coalescing and deduplication become portable logic, the backing store stays host-supplied, and a
 consumer cannot tell a caching source from a non-caching one.
 
-Why decoded entries are keyed **per attribute**: [[RFC-0002:C-PROJECTION]] otherwise forces a choice between
-fragmenting the cache per distinct projection and caching whole records, which discards the benefit projection
-exists for. Caching each decoded attribute separately and assembling a batch on demand avoids both, and
-sharing across pipelines with differing projections then requires no special handling.
+Why decoded entries are keyed **per attribute**: it is the only keying that escapes the dilemma the context
+above describes, and [[RFC-0004:C-CACHE]] 4 states the obligation. Holding each decoded attribute on its own and
+assembling a batch on demand means a pipeline reading a superset of another's attributes reuses everything
+already decoded, so neither horn is paid and sharing between differing projections needs no special case.
 
 Why integrity is verified **only on the committed path**:
 
@@ -90,14 +92,16 @@ Why integrity is verified **only on the committed path**:
   [[RFC-0003:C-PREVIEW]] 1 already forbids anyone from keeping.
 - **It is the split already used five times.** Strictness where a result is kept, latitude where it is not.
 
-Why failure is a **cache miss and not an error**: [[RFC-0007:C-BAKE]] 4 and [[RFC-0004:C-CACHE]] 1 guarantee
-every entry is re-derivable, so discarding and re-deriving is always available. Treating verification failure
-as an error would turn a recoverable condition into an interruption, and would tempt an implementation to skip
-verification to avoid spurious failures.
+Why failure is a **cache miss and not an error**: re-derivability makes discarding an entry always available,
+so the cheap response is also the correct one. [[RFC-0004:C-INTEGRITY]]'s rationale gives the argument; what
+belongs here is that this is the reason integrity could be added at all. Had verification failure been an
+error, the obligation would have been a reliability cost weighed against a security benefit, and the weighing
+would have gone the other way.
 
-The obligation is detection, not prevention. Nothing here stops an entry being altered; the guarantee is that
-an altered entry cannot silently contribute to a delivered result — the same standard
-[[RFC-0005:C-BINDING]] applies to a substituted source."""
+The obligation is detection rather than prevention, on the terms [[RFC-0004:C-INTEGRITY]] states. Choosing
+that standard rather than a stronger one is the decision: it is what [[RFC-0005:C-BINDING]] already applies to
+a substituted source, so integrity for caches asks nothing new of a host and adds no mechanism the corpus did
+not already have."""
 consequences = """
 ### Positive
 
@@ -186,6 +190,6 @@ pros = [
 ]
 cons = [
     "A fingerprint detects staleness, not modification of the cache entry itself",
-    "A tampered baked overlay would change a delivered result while [[RFC-0007:C-BAKE]] 2 asserts it cannot",
+    "A tampered baked overlay would change a delivered result, which [[RFC-0007:C-BAKE]] 2 asserts cannot happen",
 ]
 rejection_reason = "It leaves a stated guarantee unenforced. [[RFC-0007:C-BAKE]] 2 asserts that consolidation cannot change results, and without entry integrity a modified overlay does exactly that, silently, with the provenance trail recording that nothing was wrong. A digest is cheap where it is required and re-derivation makes failure recoverable."

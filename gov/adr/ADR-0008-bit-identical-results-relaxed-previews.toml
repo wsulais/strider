@@ -29,21 +29,17 @@ see ([[RFC-0002:C-EXEC]] 4), and render state is derived, one-way and never auth
 from the whole-dataset full-resolution answer must already be declared approximate
 ([[RFC-0002:C-APPROX]]).
 
-Examining what remained turned up a conflation. "Preview" is used for two reductions with entirely
-different error characteristics. Reducing **resolution** over the full extent gives a noisier version of
-the correct answer, degrading smoothly — a minimum-elevation raster built from a one-in-sixty-four
-sample is the real raster plus noise. Restricting **extent** gives an answer that is exact inside the
-region and structurally wrong outside it: a global reduce then summarises a subset, so height above
-ground normalises against a ground surface that does not exist beyond the boundary, and a restricted
-extent carries no halo at its edge, so every neighbourhood operator is wrong precisely where the user is
-looking. Clipping to the visible region is the obvious way to make a preview fast, and it produces a
-hard artefact along the edge of the view that moves as the camera moves — which a user reads as a defect
-in the software rather than a limitation of previewing.
+Examining what remained turned up a conflation: "preview" was being used for two reductions whose errors
+behave nothing alike. [[RFC-0003:C-RESOLUTION]] now characterises them and its rationale carries that
+argument. What decided things here is that only one of the two degrades gracefully. A one-in-sixty-four
+sample of a minimum-elevation raster is that raster plus noise, and a user can reason about noise. A
+view-clipped raster is exact in the interior and wrong along the edge of the view itself — the place the
+user is looking — and the error travels with the camera. Noise a user can discount; a moving artefact they
+diagnose as a bug. That asymmetry is why the two kinds are declared separately rather than together.
 
-Usefully, the distinction did not need a new concept. The declarations already required by
-[[RFC-0002:C-EXEC]] 1 carry exactly the information needed: an operator with zero halo and a single pass
-is position-independent, so restricting its extent is not an approximation at all, while an operator
-with a halo or a second pass changes its answer under restriction rather than merely coarsening it.
+Usefully, the distinction needed no new concept. [[RFC-0002:C-EXEC]] 1's existing declarations already
+decide which operators a restriction is safe for, by the reasoning [[RFC-0003:C-RESOLUTION]] 2 sets out, so
+nothing had to be added to the operator contract to separate a safe restriction from an unsafe one.
 
 The genuinely open question was determinism. Summing twenty billion floating-point values is
 order-dependent, so folding partial results as they arrive produces different final digits run to run —
@@ -98,8 +94,8 @@ Why **bit-identical committed runs**, which is the costly half:
 Why previews are **relaxed**, and what bounds the relaxation:
 
 - **It costs no new disclosure.** A preview is already declared approximate under
-  [[RFC-0003:C-RESOLUTION]] 3, so non-determinism falls inside a limitation the user has been told
-  about. No additional signal is needed.
+  [[RFC-0003:C-RESOLUTION]] 3, so the relaxation adds no hazard a user has not been warned of already, for
+  the reason [[RFC-0003:C-PREVIEW]] 2's rationale gives. No second signal had to be invented.
 - **The ordering cost buys nothing there.** Bitwise stability in a number nobody keeps is not a property
   anyone can use, and the buffering it requires opposes the responsiveness previews exist for.
 - **But instability must not be visible.** Points changing colour between frames, or a statistics panel
@@ -107,8 +103,9 @@ Why previews are **relaxed**, and what bounds the relaxation:
   relaxation perceptually rather than numerically — stability to the user, not bitwise equality, which
   is precisely what was declined.
 - **And a preview can never become a result.** [[RFC-0003:C-PREVIEW]] 1 and 4 forbid reuse and require
-  export to re-evaluate, because reusing a warm result is exactly the optimisation someone will reach
-  for, and it would deliver a camera-dependent number as a committed one."""
+  export to re-evaluate. Making that structurally impossible rather than merely discouraged is the decision:
+  the shortcut here is one an implementer takes on performance grounds, in good faith, without seeing that it
+  hands over a camera-dependent figure as a committed one."""
 consequences = """
 ### Superseded in part
 

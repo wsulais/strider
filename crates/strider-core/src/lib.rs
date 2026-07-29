@@ -13,5 +13,7 @@
 //!   byte retrieval and parallelism come from the caller, so this crate compiles
 //!   for a target with no filesystem, no threads and no blocking I/O.
 //! * Batches are **plain Arrow** ([[RFC-0002:C-EXEC]] 3) — no Strider envelope on
-//!   the data path. Spatial properties belong to the pipeline stage, with halo
-//!   membership the sole per-point exception ([[RFC-0002:C-HALO]] 1).
+//!   the data path. Spatial properties belong to the pipeline stage, and halo
+//!   membership is not an exception to that: it is derived from the stage's own
+//!   partition bounds together with a point's position, so the column carrying it
+//!   is a cache of that derivation ([[RFC-0002:C-HALO]] 1, [[RFC-0002:C-EXEC]] 4).

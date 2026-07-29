@@ -104,9 +104,9 @@ whether it reads as a cost depends on session length rather than dataset size. A
 reclaim that space is pressure against [[RFC-0007:C-PROVENANCE]] 3, and should be recognised as such
 rather than treated as housekeeping.
 
-Two erosions to watch. First, erosion by degrees: no individual cache eviction looks like discarding an
-audit trail, which is exactly how audit trails get discarded, and it is why that clause names the
-mechanisms rather than stating a principle. Second, the baked form being treated as authoritative because
+Two erosions to watch. First, the gradual kind [[RFC-0007:C-PROVENANCE]] 3 is written against, which is why
+that item enumerates mechanisms instead of stating a principle: a principle is easy to agree with while every
+particular deletion looks harmless. Second, the baked form being treated as authoritative because
 it is the one being read — the moment anything is recovered from a bake that could not be re-derived from
 history, the split has already failed.
 

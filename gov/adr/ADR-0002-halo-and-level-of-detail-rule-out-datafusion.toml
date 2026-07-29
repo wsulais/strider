@@ -112,7 +112,7 @@ has since split them. Aggregation and two-phase reduction *are* inheritable: an 
 is associative can be handed to an engine without weakening determinism, so the engine's vectorised grouped
 aggregation and its partial-then-final split come for free, and only the accumulator is Strider's. Spill
 cannot be inherited at all. An engine's spill manager writes to a filesystem path or refuses; there is no
-interface through which a caller supplies the store. [[RFC-0002:C-MEMORY]] 4 requires spill to be obtained
+interface through which a caller supplies the store. [[RFC-0002:C-MEMORY]] 7 requires spill to be obtained
 through the host storage interface, which such an engine cannot do — so an engine adapter is a **desktop host
 integration**, not a component of the portable core, and the portability gates stay where they are. That is a
 consequence of positioning rather than an argument for it, and it is the reason the positioning has a concrete

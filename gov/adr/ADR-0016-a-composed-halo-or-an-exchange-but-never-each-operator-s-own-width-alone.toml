@@ -203,7 +203,7 @@ pros = [
 ]
 cons = [
     "Requires a barrier per step, so partitions cannot be evaluated independently and the slowest partition gates every other",
-    "Holds every partition's intermediate output between operators — whole-dataset state, which [[RFC-0002:C-MEMORY]] 1 forbids unless spilled",
+    "Holds every partition's intermediate output between operators — whole-dataset state, which [[RFC-0002:C-MEMORY]] 1 forbids unless it is spilled through the host interface [[RFC-0002:C-MEMORY]] 7 requires",
     "Costs one halo construction per operator per partition rather than one per partition — 12 against 4 in the measured chain",
 ]
 rejection_reason = "The barrier is the problem, not the cost of the halo. One per operator makes a chain's latency the sum of its slowest partitions rather than of its average, and forces whole-dataset intermediate state through the spill path at every step. For a single-machine v1 that is a worse default than redundant computation — but it is genuinely better for long chains, which is why it stays permitted rather than mandated."

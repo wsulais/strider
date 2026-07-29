@@ -8,8 +8,7 @@ status = "active"
 
 [content]
 text = """
-C-MEMORY 1 fixes an operator's ceiling partly by "the declared size of any summary it builds", which presumes
-every summary has a size that can be declared. The commonest one does not. A gridded ground surface is sized
+C-MEMORY 1 requires an operator to compute a bound on the memory it will hold, which for a two-pass operator means bounding the summary it builds. The commonest such summary resists it. A gridded ground surface is sized
 by the region it spans, and a region is a property of the dataset — so the figure an author would write down
 survives until someone runs the operator over a larger survey. Two-pass operators are where bounded memory is
 either real or merely stated, and this is what makes the difference checkable.
@@ -19,17 +18,19 @@ either real or merely stated, and this is what makes the difference checkable.
    - A size bounded only by the dataset's extent is not declarable. Extent is a property of the dataset, and a
      fully occupied grid grows with it.
    - A size bounded only by how many points the dataset contains is not declarable.
-2. For a summary on a regular grid, the declared size MUST be the number of cells the partition and its halo
-   **span** at that resolution, whether or not every cell is occupied.
-   - Declaring the observed occupancy instead MUST NOT be treated as satisfying (1). Occupancy rises with
-     density; the span does not.
+2. For a summary on a regular grid, two cell counts are admissible bounds, and the size declared under (1) MUST be the one belonging to the representation the operator will use:
+   - the number of cells the partition and its halo **span** at that resolution, which bounds a representation allocating a slot per cell whether occupied or not;
+   - whichever is smaller of that span and the point bound C-MEMORY 2 supplies for the partition and its halo, which bounds a representation holding only occupied cells.
+   - The span is admissible because it is fixed by the partition, the halo and the resolution. The point bound is admissible because a cell cannot be occupied without a point in it, so occupancy can never exceed the points present, and C-MEMORY 2 already bounds those.
+   - The smaller **count** MUST NOT be reported where the larger representation is the one used. The two representations cost different amounts per cell — an occupancy bit against a keyed entry — so the lesser count can correspond to the greater number of bytes, and C-MEMORY 1 asks for a bound on bytes held.
+   - Bounding the size by *observed* occupancy MUST NOT be treated as satisfying (1). Occupancy measured on one input is not a bound on occupancy for another: it rises with density, where both the span and the point bound do not.
 3. An operator MUST build a summary per partition wherever a summary over the whole extent would have no
    declarable size under (1).
    - The per-partition summary MUST be built from the partition's own points together with the halo C-HALO 3
      requires for a summary-mediated neighbourhood, so that every cell the operator's later pass reads from a
      core point holds the value a whole-extent summary would have held.
 4. Conformance to (1) through (3) MUST be verified by processing inputs of at least two sizes differing by at
-   least an order of magnitude, as C-MEMORY 5 requires, and measuring the peak **total** summary residency
+   least an order of magnitude, as C-MEMORY 8 requires, and measuring the peak **total** summary residency
    across the run.
    - That residency MUST NOT scale with input size, and MUST remain within the size declared under (2).
    - The operator's output over multiple partitions MUST also agree with its output over a single partition,
@@ -52,11 +53,11 @@ occupied cell, so at a resolution finer than the point spacing its occupancy ris
 fixed partition — measured, a per-partition sparse summary grew by nearly a factor of three as the input grew
 fourfold, at unchanged extent and unchanged partitioning.
 
-(2) is what does work, and its usefulness goes beyond being true. The span is fixed by the partition, the halo
-and the resolution, and a sparse grid can never exceed it — so declaring the span makes the ceiling truthful.
-It also removes any need to decide which regime a resolution falls in: coarse grids saturate and fine ones do
-not, but the span is the declared size in both, so no implementation has to detect the boundary and no clause
-has to define it.
+(2) admits two bounds because a single one is wrong in opposite directions for the two grids this project actually builds. A 2D ground surface whose cells are wider than the spacing of the returns beneath them fills nearly all of them, so for that grid the span is both the honest figure and the achievable one and nothing tighter exists — this follows from the cell size against the sampling and was not separately measured. A 3D voxel grid at two centimetres cannot saturate at all — measured, between 0.36 and 1.05 per cent of its span was ever occupied, because a crown is foliage in air rather than a solid. Requiring the span there over-declares by up to two and a half orders of magnitude — 276 times at the coarsest partition measured and 95 times at the finest — which would make an affordable operator inadmissible at any partition size worth using.
+
+What both bounds have in common, and what observed occupancy lacks, is independence from the data. The span follows from the partition and the resolution; the point bound follows from the partition through C-MEMORY 2. An occupancy figure measured on one survey follows from that survey, and the earlier form of this item was right to refuse it — measured, a per-partition sparse summary grew by nearly a factor of three as the input grew fourfold at unchanged extent and unchanged partitioning. The correction is not that occupancy is admissible after all; it is that *bounding* occupancy by the point count is a different claim from *observing* it.
+
+Admitting two bounds removes the need for this clause to decide which regime a resolution falls in. Coarse grids saturate and fine ones cannot, and nothing here has to detect the boundary or name it. What this clause deliberately does *not* do is let the operator report the smaller figure regardless. Reporting the lesser of two counts was tried and is unsound: the two representations cost different amounts per cell, so an operator whose point bound is the smaller count may still hold the denser allocation, and measured, the representation actually chosen was the span-sized one at every partition size — the case where reporting the lesser count would have understated what was held. C-MEMORY 1 already settles who chooses; this item only says which count goes with which choice.
 
 (3) restricts *where* a summary is computed, not what an operator may compute. Nothing here forbids a gridded
 ground surface at any resolution; what is forbidden is building one over the whole extent, whose span is a
@@ -66,7 +67,7 @@ held, so partitioning the summary is exact rather than an approximation to discl
 own grouped aggregate is the wrong place to compute such a summary is a comparative question, argued in the
 accompanying architecture decision.
 
-(4) borrows C-MEMORY 5's two-size protocol rather than inventing one, and its last bullet is what makes the
+(4) borrows C-MEMORY 8's two-size protocol rather than inventing one, and its last bullet is what makes the
 check able to fail. Output agreement is what a conformant implementation and a whole-extent one have in
 common, so residency is the only observable that separates them — and it has to be a total, because an
 implementation holding one global grid can report a per-partition slice and show a flat figure while holding

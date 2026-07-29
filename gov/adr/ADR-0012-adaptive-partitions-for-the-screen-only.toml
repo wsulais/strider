@@ -39,9 +39,13 @@ neighbourhoods" is exactly what a declared halo width and a satisfying planner p
 ([[RFC-0002:C-EXEC]] 1), deterministically and with partition identity preserved. Cache-driven subdivision
 would be a second, non-deterministic mechanism for a problem that already has a deterministic one.
 
-None of that argues against adaptation for *rendering*, where it is genuinely desirable. Render state is
-derived and never authoritative ([[RFC-0007:C-EXTRACT]] 1 and 2), and previews are already released from
-reproducibility ([[RFC-0003:C-PREVIEW]] 2), so nothing repeatable depends on the shape of a render partition."""
+None of that argues against adaptation for *rendering*, where it is genuinely desirable and where
+[[RFC-0003:C-PARTITIONING]] 2 grants it. The grounds were already in the corpus rather than invented for the
+occasion — [[RFC-0007:C-EXTRACT]] and [[RFC-0003:C-PREVIEW]] between them had settled that nothing repeatable
+may depend on render state — so the work here was only to notice that they reach this case. The part that
+belongs to this record is the shape of the answer: one mechanism, forbidden on one path and wanted on the
+other. That asymmetry is the decision, and it was reached instead of the two obvious compromises, which were
+permitting adaptation everywhere with a warning and forbidding it everywhere for uniformity."""
 decision = """
 Partitioning may adapt for preview and rendering, and may not for committed runs. The obligations are written
 in [[RFC-0003:C-PARTITIONING]]; this ADR records only *why*.

@@ -10,6 +10,7 @@ refs = [
     "RFC-0002:C-EXEC",
     "RFC-0002:C-HALO",
     "RFC-0002:C-MATERIALISATION",
+    "ADR-0018",
 ]
 
 [content]
@@ -81,6 +82,8 @@ Why an **in-batch ordering contract** rather than the alternatives:
   column, but the column that caches it stays an ordinary one, so an external Arrow consumer reads it without
   knowing anything about Strider ([[RFC-0002:C-EXEC]] 3) while Strider reads the same fact as a point count.
 
+- **A halo stays ordinary data, and that is what keeps the operator contract uniform.** One batch means an operator receives points, some of which are halo, and nothing about its input shape depends on whether it asked for a halo. An operator declaring zero halo width is handed no halo points and needs no notion of them; one declaring a width is handed them in the same batch it was already reading. Two batches invert this: every operator's read path has to contemplate a second input, including the operators that never wanted one, so the arrangement that is cheaper at removal is the one that pushes a case distinction into code that has no interest in the distinction. Since halo membership became geometric ([[ADR-0018]]), this is the argument the decision principally rests on — a uniform contract rather than a judgement about who writes operators.
+
 Why the ordering is **verified rather than assumed** ([[RFC-0002:C-HALO]] 5): a plain Arrow batch cannot
 express row order in its schema, which is the price of [[RFC-0002:C-EXEC]] 3's no-envelope rule. So the contract is
 invisible to every producer that might break it — a source reading in storage order, a repartitioning, an
@@ -130,21 +133,27 @@ direction that reports conformance.
 Separate core and halo batches would make removal free and need no ordering contract at all, so the option not
 taken is the cheaper one at the point of removal. This paragraph originally recorded that its rejection rested
 on a judgement about operator authors rather than on a measurement, and set a revisit trigger: whether an
-operator can tolerate a two-batch input. That trigger has since fired, and the measurement changed which
-argument the rejection stands on.
+operator can tolerate a two-batch input. That trigger has fired, and what it produced needs stating carefully,
+because the first attempt to state it was wrong.
 
-Operators tolerate it. A neighbourhood operator reading two arrays through a virtual index space — global
-indices over a conceptual join, resolved by a branch at the coordinate fetch — produced results identical to
-the single-batch form and built a spatial index byte-for-byte the same, with nothing concatenated and nothing
-copied. So the recorded objection, that a two-batch operator must either handle two batches throughout or
-concatenate them, is false: the third option was not considered.
+Operators tolerate it, and one recorded objection was simply false. It said a two-batch operator must either
+handle two batches throughout or concatenate them. A third arrangement was not considered: global indices over a
+conceptual join, resolved by a branch at the coordinate fetch. Measured, that produced results identical to the
+single-batch form over a real partition and a spatial index of identical size, with nothing concatenated and
+nothing copied.
 
-What the measurement found instead is a cost in the place that matters. The branch at the coordinate fetch sits
-in the innermost loop of the operation that dominates a neighbourhood computation, and it costs about a sixth of
-that operation: 1.16 times the single-batch wall clock over three release runs, and 1.18 in debug, so it is a
-property of the arithmetic rather than of the build. Against that, the in-batch arrangement pays two integers
-once per removal. The decision therefore stands, on a measurement rather than on a judgement — but for a
-different reason than it was first given, and the maintainability argument is no longer doing the work.
+**The cost this paragraph briefly claimed does not survive measurement.** A first attempt reported the branch
+costing about a sixth of the neighbourhood computation. That figure came from splitting a uniformly random cloud
+three-quarters of the way through and calling the tail a halo, which scatters halo points across the whole
+extent and leaves almost every grid cell holding a random mixture — so the branch mispredicted on nearly every
+candidate. A real halo is a boundary shell: interior cells are wholly core, only cells near the partition
+boundary are mixed, and the branch becomes predictable. Measured over a genuine partition in a release build,
+the two arrangements are indistinguishable — between 0.98 and 1.00 times the single-batch time over four runs,
+with the two-batch form marginally ahead. The earlier figure also survived into debug builds and that apparent
+agreement across profiles was cited as proof the cost was arithmetic rather than an artefact; on real geometry
+the profiles disagree, release showing no cost and debug still showing about 1.15.
+
+So the position is this. The objection about concatenation is retired as false, and the measured cost is retired as an artefact. What the decision rests on instead is the uniformity argument in the decision above: a halo carried in the batch is ordinary data, so no operator's input shape depends on whether it asked for one, while two batches put a second input in front of every operator including those that declare no halo. That is a claim about the operator contract rather than a prediction about who writes operators, which is what the earlier framing got wrong in calling it a judgement about authors. It remains unmeasured — no operator exists yet to be made simpler or harder — so it is an argument from the shape of the interface, weighed against a removal cost that measurement has now shown to be nil either way.
 
 ### Neutral
 
@@ -202,9 +211,13 @@ pros = [
     "Needs no in-batch ordering contract, so nothing invisible to break and no verification pass",
     "Satisfies [[RFC-0002:C-MATERIALISATION]] 2 trivially, since no batch is reduced at all",
     "Measured: needs no concatenation — a virtual index space over two arrays gives identical results and a byte-identical spatial index",
+    "Measured over a real partition in release: indistinguishable from the single-batch form, 0.98 to 1.00x, so the fetch branch costs nothing where halo points form a boundary shell",
 ]
 cons = [
-    "Pushes the awkwardness onto every neighbourhood operator, which is the code most likely to be written by someone other than the planner's author",
-    "Measured: the coordinate-fetch branch costs about 1.16x the single-batch wall clock on the neighbourhood computation, stable across release and debug builds",
+    "Splits one contract into two shapes: 'a batch' stops being what an operator consumes, so every rule quantifying over batches must say which of the pair it means",
+    "Every operator's read path must contemplate a second input, including operators that declare no halo and have no interest in the distinction",
 ]
-rejection_reason = "It optimises the removal at the expense of the read, and the read is the common case. Two of its three original objections have since fallen: the one about sitting awkwardly with a per-point halo attribute lapsed when membership became geometric and the attribute a cache, and the one about needing concatenation was simply wrong — a virtual index space over two arrays needs neither a join nor a copy, and was measured producing identical results with an identical index. What survives is a measurement rather than an argument: resolving a global index through a branch at the coordinate fetch costs about 1.16x on the neighbourhood computation, which is the operation that dominates, against two integers once per removal for the arrangement adopted. On removal cost alone it still wins; on total cost it does not."
+rejection_reason = """
+Two of its three original objections have fallen. The one about sitting awkwardly with a per-point halo attribute lapsed once membership was defined geometrically and the attribute became a cache of it, which [[ADR-0018]] argues — still proposed, so that first ground remains provisional, though the third below does not depend on it. The one about needing concatenation was wrong: global indices over a conceptual join need neither a join nor a copy, and were measured giving identical results over a real partition with an equally sized index and no measurable difference in time.
+
+What survives is the third, though not on the ground first given. The objection is not that a two-batch input falls on whoever writes a neighbourhood operator — that is a prediction about authors, and this decision no longer rests on it. It is that a second input changes the operator **contract**, uniformly and for everyone: one batch in and one batch out stops being the shape an operator consumes, so every operator's read path must contemplate a pair, including operators that declare no halo and have no interest in the distinction, and every rule elsewhere in the corpus that quantifies over a batch has to say which of the pair it means. Ordering within a single batch confines the cost to the stages that assemble a partition and the stage that removes a halo, and leaves the contract one shape."""

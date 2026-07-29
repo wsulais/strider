@@ -20,11 +20,10 @@ from a stream of Arrow record batches to a stream of Arrow record batches. It co
 is trivial to explain, and it is the shape most streaming frameworks expose. It cannot express the
 algorithms Strider exists to provide.
 
-Normal estimation, nearest-neighbour features, statistical outlier removal and cloth-simulation
-ground filtering all require points outside the batch being processed — a point at the edge of an
-octree node has neighbours in sibling nodes and in nodes at other levels of detail. A bare stream
-transform receives only what it is handed and has no way to ask for more, so it either produces
-silently wrong results along every partition boundary or the framework materialises the whole
+The operators that carry this project need points from outside the batch being processed, for the reason
+[[RFC-0002:C-HALO]]'s preamble sets out. What that does to a *bare stream transform* is this decision's own
+subject: such a transform receives only what it is handed and has no way to ask for more, so it either
+produces silently wrong results along every partition boundary or the framework materialises the whole
 dataset, defeating the premise. Morphological ground filters have a different shape again: they need
 a coarse elevation surface over the whole area of interest before classifying a single point. That
 is two passes, and one stream transform expresses one.
@@ -93,7 +92,7 @@ numbers rather than failing.
 Third parties cannot drop in an arbitrary stream transform: every operator must fit the declaration
 vocabulary, and extending that vocabulary is a public-contract change. Algorithms whose only known
 formulation is globally iterative are unavailable until the deferred extension point exists
-([[RFC-0002:C-MEMORY]] 3).
+([[RFC-0002:C-MEMORY]] 6).
 
 ### Neutral
 

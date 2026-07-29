@@ -8,7 +8,7 @@ refs = [
     "RFC-0002:C-MEMORY",
 ]
 
-# [[RFC-0002:C-MEMORY]] 6 extends this to a pipeline that delegates part of its
+# [[RFC-0002:C-MEMORY]] 9 extends this to a pipeline that delegates part of its
 # evaluation: the two-size measurement must cover the WHOLE evaluation, including the
 # delegated part. Measuring the registered operators alone leaves the ceiling set by
 # something no item reaches.

@@ -12,6 +12,7 @@ refs = [
     "RFC-0007:C-EDIT",
     "RFC-0007:C-EXTRACT",
     "RFC-0007:C-INVALIDATION",
+    "RFC-0007:C-OVERVIEW",
 ]
 
 [content]
@@ -30,10 +31,11 @@ COPC provides.
 Graphite suggested the way out. It treats the document *as* a graph and records brush strokes
 parametrically rather than as pixels, so a gesture becomes data fed to a node. Its layer stack is a
 projection of the graph rather than a separate model, which matters because the users here are
-foresters and not node-graph people. Applied to point clouds: a lasso over forty thousand points is
-a polygon, a predicate and an action — roughly a kilobyte, independent of reach — and needs no point
-identity at all, because a polygon survives reprojection and resampling where a point reference
-would not. Being a spatial predicate, it also composes with the octree index instead of fighting it.
+foresters and not node-graph people. Applied to point clouds the fit is immediate, and
+[[RFC-0007:C-OVERVIEW]] states the resulting shape in its compact form. Two properties of it are what made
+this the answer rather than merely an attractive idea. It needs no point identity at all, because a polygon
+survives reprojection and resampling where a point reference would not. And being a spatial predicate it
+composes with the octree index instead of fighting it.
 
 Graphite also supplies the warning. After years of development its raster tools remain experimental
 and full non-destructive raster editing is unimplemented; its planned mitigation, JIT compilation, is
@@ -94,8 +96,9 @@ graph. The processing pipeline is throughput-bound and reads the document graph 
 boundary is built once rather than per consumer.
 
 Why the stack is **spatially indexed**: this is the piece neither reference project supplies, and
-without it every partition read replays every edit and a file grows slower over a day's work. Indexed,
-a partition intersects a handful of edits regardless of how many exist.
+[[RFC-0007:C-INVALIDATION]]'s rationale sets out what it buys. Recording it as a decision matters because it
+is the one part of the edit model that is not free — an index over the stack is state to maintain and
+invalidate, accepted because the alternative degrades with use rather than with size.
 
 The residual gap is acknowledged rather than closed: enumerated point-set edits remain necessary for
 corrections no region expresses, and they require a point identity mechanism specified separately."""
@@ -105,8 +108,8 @@ consequences = """
 Editing becomes expressible at all, which was in question. An edit is an ordinary bounded operator, so
 [[RFC-0002]] applies unchanged and nothing new is needed to schedule it. Undo is removing a node and
 history is the graph, so both come free. Edits reorder against processing steps, which the overlay
-alternative could not express. The original source is never modified, so no edit sequence can lose data and
-a remote source needs no write access.
+alternative could not express. And because the original source is never modified, the non-destructive
+guarantees [[RFC-0007:C-EDIT]] 5 draws out come with the model rather than having to be engineered onto it.
 
 ### Negative
 

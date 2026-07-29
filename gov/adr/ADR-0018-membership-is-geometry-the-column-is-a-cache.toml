@@ -7,10 +7,10 @@ status = "proposed"
 date = "2026-08-01"
 refs = [
     "ADR-0015",
-    "ADR-0016",
     "RFC-0002:C-EXEC",
     "RFC-0002:C-HALO",
     "RFC-0002:C-MEMORY",
+    "RFC-0003:C-PARTITIONING",
 ]
 
 [content]
@@ -23,7 +23,7 @@ disagree with the record.
 It stops being invisible once a boundary case is considered. Both the coordinates and the boundaries are exact
 integers on the same lattice, so a point sitting precisely where two partitions meet is a routine occurrence,
 not a measure-zero curiosity to be waved away. Two assemblers could decide such a point oppositely, both satisfy every
-obligation in the clause, and between them duplicate it or lose it — the silent class item 2 of that clause, as narrowed by [[ADR-0016]],
+obligation in the clause, and between them duplicate it or lose it — the silent class item 2 of that clause
 exists to prevent, arriving from the one direction the clause did not look.
 
 The question this raises is whether membership should be *derived* from position rather than stored, and it
@@ -81,10 +81,9 @@ looks like after the fact: not a bug in one tool, but a meaning that two populat
 **Why moving points became a duty rather than a prohibition.** Under a stored label, displacement was invisible
 — a point could be carried anywhere and the label would still say what it said. Under a definition, moving a
 point can change what it is. The obvious response, forbidding operators to move points, would forbid the
-partition-wise reformulations [[RFC-0002:C-MEMORY]] 2 admits, so the obligation is instead to move the bounds
+partition-wise reformulations [[RFC-0002:C-MEMORY]] 5 admits, so the obligation is instead to move the bounds
 with the points or to declare the partitioning void. Stating it as three properties an alteration must preserve,
-rather than as a list of permitted alterations, is what leaves the shape of a bounding volume open for the
-accompanying decision on frames to address."""
+rather than as a list of permitted alterations, is what leaves the shape of a bounding volume open — a question no decision has yet been taken on."""
 consequences = """
 ### Positive
 
@@ -115,12 +114,16 @@ operator that moves a point, and it did not exist before.
 
 Nothing here settles whether a partition's bounds may be oriented rather than axis-aligned. The duty is written
 in terms of properties an alteration must preserve, so an implementation that finds oriented bounds worth their
-cost is not obstructed. That question is the accompanying decision's.
+cost is not obstructed. No decision has been taken on it: [[RFC-0002:C-EXEC]] 4 leaves it open, and the nearest
+thing to a ruling is [[RFC-0003:C-PARTITIONING]] 4, which permits a partitioning to sit in a rotated frame
+without saying anything about the shape of a bounding volume.
 
 The alternative [[ADR-0015]] weighed, of supplying core and halo points as **separate batches**, becomes slightly more attractive
 under this decision than it was under the label-based form, because a column constant within a batch is an
-ordinary cache rather than an anomaly. Only the read-path objections to it survive, and the revisit trigger
-recorded with that decision stands."""
+ordinary cache rather than an anomaly. Its revisit trigger has since been fired, and what remains of the
+objections is that a second batch changes the operator contract for every operator rather than only for the
+stages that assemble and remove a halo — a claim about the contract, not a prediction about who writes
+operators. That is recorded there, not here."""
 
 [[content.alternatives]]
 text = "Define membership geometrically and keep the boolean column as a cache of it, with each face of the bounds stated closed or open"
@@ -147,7 +150,7 @@ cons = [
     "Leaves what makes a point core to whoever assembles the partition, so a point on a shared boundary has no determined owner",
     "No obligation about the label can be checked, because a label with no stated meaning cannot be wrong",
 ]
-rejection_reason = "It is the arrangement whose gap prompted this decision. With scaled-integer coordinates and boundaries on chosen values, a point lying exactly on a shared boundary is ordinary, and two conformant assemblers could duplicate or lose it with nothing in the corpus able to say either was wrong."
+rejection_reason = "It is the arrangement whose gap prompted this decision. Both the coordinates and the partition boundaries are exact integers on one lattice, so a point sitting precisely where two partitions meet is routine rather than rare — and two assemblers could then own it or disown it in opposite ways, each conforming, with nothing in the corpus able to name either as wrong."
 
 [[content.alternatives]]
 text = "Derive membership from position at each use and carry no column at all, as Dask does for regular arrays"

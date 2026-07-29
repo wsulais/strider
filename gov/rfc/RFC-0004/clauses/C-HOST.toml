@@ -16,7 +16,7 @@ as a redesign, not a port.
 
 1. A library crate MUST obtain persistent byte storage through a storage interface supplied by its caller,
    and MUST NOT call filesystem APIs directly.
-   - This covers any spill, cache, or temporary working set ([[RFC-0002:C-MEMORY]] 4).
+   - This covers any spill, cache, or temporary working set ([[RFC-0002:C-MEMORY]] 7).
    - The interface MUST NOT assume hierarchical paths.
    - The interface MUST NOT assume a stored item can be modified in place after being written.
 2. A library crate MUST obtain byte ranges through a retrieval interface supplied by its caller.

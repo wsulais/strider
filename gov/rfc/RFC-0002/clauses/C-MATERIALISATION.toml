@@ -22,7 +22,7 @@ throughput to work no test is looking for. This clause exists to make the differ
      passed-through attribute at most once.
 2. A stage that reduces a batch to a contiguous range of its points MUST do so by adjusting which points
    the batch describes, and MUST NOT produce new memory for the attributes it retains.
-3. Obligations (1) and (2) are scoped to a single process, with no spill ([[RFC-0002:C-MEMORY]] 4) and no
+3. Obligations (1) and (2) are scoped to a single process, with no spill ([[RFC-0002:C-MEMORY]] 7) and no
    serialisation between the two states being compared.
    - Where a spill or serialisation intervenes, memory identity cannot hold and neither obligation applies.
    - A stage MUST NOT be relieved of (1) or (2) by introducing a spill or serialisation that the memory
@@ -53,7 +53,7 @@ share memory with its input at all, and demanding it would make the clause unimp
 ignored. What such an operator can still be held to is the *at most once* bound in the second bullet: one
 gather, not a gather per stage.
 
-(3) exists because (1) and (2) would otherwise contradict [[RFC-0002:C-MEMORY]] 4, which permits spilling
+(3) exists because (1) and (2) would otherwise contradict [[RFC-0002:C-MEMORY]] 7, which permits spilling
 to satisfy a memory ceiling. Address identity cannot survive a spill and reload, so an implementation
 obeying one clause would breach the other. The second bullet is what stops the scope becoming a loophole:
 spilling is permitted to bound memory, not to escape this clause.

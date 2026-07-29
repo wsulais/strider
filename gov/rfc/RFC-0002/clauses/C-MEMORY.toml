@@ -8,84 +8,76 @@ status = "active"
 
 [content]
 text = """
-Bounded memory is the whole of Strider's differentiation from tools that treat a point cloud as an
-in-memory object. A guarantee holding for *some* operators is not one a user can rely on when assembling
-a pipeline, so the bound is a property of the operator set, enforced by excluding operators that cannot
-meet it.
+Bounded memory is the whole of Strider's differentiation from tools that treat a point cloud as an in-memory object. A guarantee holding for *some* operators is not one a user can rely on when assembling a pipeline, so the bound is a property of the operator set, enforced by excluding operators that cannot meet it.
 
-1. Every registered operator MUST execute within a peak memory ceiling determined only by its configured
-   partition size, its declared halo width (C-EXEC 1), the declared size of any summary it builds, and the
-   declared size of any index it builds over a partition.
-   - That ceiling MUST NOT be a function of the dataset's total point count.
-   - What makes a summary's declared size admissible, and where a summary must be built, is C-SUMMARY.
-   - An index's declared size MUST be bounded by the partition size and the declared halo width. An index
-     whose size is bounded only by the dataset is not admissible under this item.
-2. An operator whose formulation requires simultaneous access to the entire dataset, or an unbounded
-   number of passes over it, MUST NOT be registered as a built-in operator.
-   - This excludes iterative pairwise registration, global surface reconstruction, and whole-cloud
-     relaxation methods **in their published whole-dataset forms**.
-   - A partition-wise reformulation with a declared halo is admissible under (1), and MUST then disclose
-     its divergence under C-APPROX 1.
-3. An operator that does not satisfy (1) MUST NOT be reachable without the caller having distinguished it
-   from a bounded operator first.
+1. Every registered operator MUST be able to **compute** an upper bound on the peak memory it will hold for a partition, from its own configuration together with a description of that partition, without reading point data.
+   - The description it may rely on comprises the partition's bounds, its halo width, and a point bound (2) for the partition together with that halo — all of which C-EXEC 4 already makes properties of the producing stage.
+   - The bound MUST NOT be a function of the dataset's total point count. It MAY be a function of the point bound, because that quantity is itself bounded by the partition.
+   - It MUST be an upper bound rather than an expectation. Where an operator would choose between representations of one structure — one sized by the region it spans, another by the cells actually occupied — the bound is for whichever it will use, and the choice is the operator's, because it is the only party that knows both figures.
+   - An operator that cannot compute such a bound MUST NOT be registered as a built-in operator.
+2. A **point bound** relied on under (1) MUST be derived without reading point data, and MUST be a bound rather than an estimate. Its region is the partition **together with the halo the stage carries**, because that is the set an operator is handed, and because C-SUMMARY 2 bounds a grid spanning both by it.
+   - Summing the point counts a spatial index records for the nodes a region intersects satisfies this: the sum is exact where the region aligns to node boundaries, and otherwise over-counts.
+   - A stage with no index over its own output — one downstream of an operator, of a halo exchange (C-COMPOSITION 2), or of an adaptive repartitioning ([[RFC-0003:C-PARTITIONING]] 2) — MUST derive its bound from the bound of the stage it consumes together with a bound on the points it adds. A stage adding none carries its input's bound forward unchanged; a stage supplying a halo MUST add a bound on the halo points it supplies. Carrying a consumed bound forward across a stage that adds points MUST NOT be treated as satisfying this.
+   - Where the bound is taken from a coarser level of an index than the finest available, the level used MUST be recorded with it. The bound's tightness depends on that level and nothing else reveals which was read.
+3. The peak memory of a **pipeline** over one partition, under a given order of its operators, MUST be computed as follows. Each position in that order is a **step**. An operator's bound (1) counts at every step from its own until the last step that needs a structure it declared as outliving it (C-EXEC 1); the pipeline's peak is the greatest total over any step. It MUST NOT be computed as the sum of every operator's bound, which assumes each holds its memory throughout and over-declares wherever a pipeline has phases.
+   - The **terms** of that total are the operator bounds (1), together with the figure (9) requires where the pipeline delegates part of its evaluation. The point batches resident between operators are not terms of it: they are bounded already by the partition and its point bound (2), which C-EXEC 4 makes properties of the producing stage, so they are accounted there rather than composed here.
+   - The order MUST be consistent with the operators' data dependencies. An order placing an operator before one whose output it reads is not an order of the pipeline at all, and C-EXEC 2 forbids executing it. Within that constraint a planner MAY use any order, and MUST establish before executing that the one it will use has a peak within its budget.
+   - The **budget** established against is the memory available to the process for this work. It MUST be a figure the planner holds before executing, and MUST be recorded in the run's evaluation configuration ([[RFC-0003:C-COMMIT]] 4). It is the quantity every ceiling in this specification is enforced against — including C-COMPOSITION 4's — and an unrecorded one leaves (8)'s assessor nothing to judge the planner's decision against.
+   - Liveness MUST be taken from the declarations C-EXEC 1 requires, not from a claim about timing. An operator that releases its structures when it finishes counts only at its own step.
+   - The figure counted across that window is the operator's **whole** bound (1), not the size of whichever structure outlives it, because C-EXEC 1 declares structures and their liveness but no per-structure sizes. This over-declares for an operator whose transient working set exceeds what it leaves behind, and that looseness is accepted: it errs toward a larger figure, which is the safe direction, and tightening it would require per-structure bounds nothing yet asks for.
+   - Where an operator makes several passes and holds different structures in each, its bound (1) is the greatest it reaches internally. This item composes *between* operators; what happens inside one is that operator's own bound to compute.
+   - Where no order fits, the planner MAY reduce the partition size, but only where every operator is **invariant** to it ([[RFC-0003:C-PARTITIONING]] 1), and only to a size that still admits the composed halo width C-COMPOSITION 3 derives. A size at which the composed halo exceeds the partition MUST be rejected under C-COMPOSITION 4 rather than adopted to fit a budget.
+   - Where no order fits at any size available to it, the planner MUST reject the pipeline, naming the operator whose bound it cannot accommodate. This holds equally where the size was fixed by [[RFC-0003:C-PARTITIONING]] 1 and where it was reduced as far as the previous bullet allows: a planner that cannot proceed owes a diagnostic either way.
+   - Among orders consistent with those dependencies, the one used MAY differ between runs of the same pipeline and MUST NOT be treated as a determinant of the result. Where a run's peak is asserted, the order it was computed for MUST be recorded with it, because (8)'s comparison is against a figure computed for one order and is otherwise unreconstructible.
+4. Where partitions are evaluated concurrently, the planner MUST establish before executing that the **sum** of the peaks (3) of the partitions it will hold in flight is within its budget, and MUST NOT admit more partitions in flight than that sum allows.
+   - It MUST NOT be computed as one partition's peak multiplied by their number unless every partition in flight has the same peak. A point bound (2) varies between partitions — measured, an interior region held just over a third of the points its scene's mean density predicts — so peaks differ and a product understates the total.
+   - An operator's own bound (1) is stated per partition so that its author reasons locally. This item is what makes the guarantee hold of the process that runs out of memory.
+5. An operator whose formulation requires simultaneous access to the entire dataset, or an unbounded number of passes over it, MUST NOT be registered as a built-in operator.
+   - This excludes iterative pairwise registration, global surface reconstruction, and whole-cloud relaxation methods **in their published whole-dataset forms**.
+   - A partition-wise reformulation with a declared halo is admissible under (1), and MUST then disclose its divergence under C-APPROX 1.
+6. An operator that does not satisfy (1) MUST NOT be reachable without the caller having distinguished it from a bounded operator first.
    - Such an operator MUST report its own memory ceiling.
-4. Spill to persistent storage is a permitted strategy for satisfying (1), and MUST be obtained through
-   the host storage interface ([[RFC-0004:C-HOST]] 1) rather than from the filesystem directly.
-5. Conformance to (1) MUST be verified by processing inputs of at least two sizes differing by at least an
-   order of magnitude, the larger exceeding available memory, and demonstrating that peak memory does not
-   scale with input size.
-6. Where a pipeline delegates part of its evaluation to an **external evaluator** — anything that computes
-   over the pipeline's data without being one of its operators — the pipeline's peak memory MUST be bounded by
-   a declared figure, and that figure MUST NOT be a function of the dataset's total point count.
-   - The stage that delegates MUST supply the external evaluator a memory bound, and MUST NOT delegate to
-     one that cannot be given a bound. An evaluator that *refuses* work on reaching its bound satisfies
-     this; one that exceeds it silently does not.
-   - An external evaluator satisfying its bound by spilling to storage it acquires for itself does not
-     satisfy (4). A library crate subject to (4) MUST NOT depend on such an evaluator.
-   - Where such a delegation occurs, conformance MUST be verified by (5)'s protocol applied to the pipeline
-     including the delegated work, by whatever integrates the evaluator. Measuring the registered operators
-     alone MUST NOT be treated as satisfying this, and this item imposes no verification on a pipeline that
-     delegates nothing.
+7. Spill to persistent storage is a permitted strategy for satisfying (1), and MUST be obtained through the host storage interface ([[RFC-0004:C-HOST]] 1) rather than from the filesystem directly.
+8. Conformance to (1), (3) and (4) MUST be verified by processing inputs of at least two sizes differing by at least an order of magnitude, the larger exceeding available memory, and demonstrating that peak memory does not scale with input size.
+   - The measured peak MUST also be compared against the figure (1), (3) and (4) compute for the same partition, the same order, and the same set of partitions in flight, and MUST NOT exceed it. A bound never checked against a measurement is a declaration rather than a bound.
+   - The comparison MUST be over the terms (3) composes. Measuring a peak that includes work (3) has no term for — delegated evaluation, or resident point batches — against a figure composed of operator bounds alone compares two different quantities, and a conformant implementation would fail it.
+9. Where a pipeline delegates part of its evaluation to an **external evaluator** — anything that computes over the pipeline's data without being one of its operators — the pipeline's peak memory MUST be bounded by a declared figure, and that figure MUST NOT be a function of the dataset's total point count.
+   - The stage that delegates MUST supply the external evaluator a memory bound, and MUST NOT delegate to one that cannot be given a bound. An evaluator that *refuses* work on reaching its bound satisfies this; one that exceeds it silently does not.
+   - An external evaluator satisfying its bound by spilling to storage it acquires for itself does not satisfy (7). A library crate subject to (7) MUST NOT depend on such an evaluator.
+   - Where such a delegation occurs, conformance MUST be verified by (8)'s protocol applied to the pipeline including the delegated work, by whatever integrates the evaluator. Measuring the registered operators alone MUST NOT be treated as satisfying this, and this item imposes no verification on a pipeline that delegates nothing.
 
 #### Rationale
 
-Stating the ceiling as a function of declared quantities rather than a fixed byte figure keeps (1)
-testable while letting an operator be configured for the machine it runs on: the test is that peak memory
-stays flat as input grows, not that it stays under a particular number.
+The options set aside on the way here, the one claim these figures were found not to bear out, and how far a single synthetic plot generalises are argued in the accompanying architecture decision rather than here.
 
-(1)'s two later bullets name what each term of the ceiling has to be bounded by, and defer the summary case to
-C-SUMMARY because it needed more room than a bullet: one common summary has no admissible size at all unless
-it is built per partition, which is an obligation about *where* work happens rather than about how much memory
-it uses. The index term is stated here rather than deferred because it has no such subtlety — an index over a
-partition is bounded by the partition.
+(1) asks for a *function* where an earlier form of this clause asked for a figure, because a figure cannot be right for the commonest structure an operator builds. A gridded structure's cost depends on the operator's own resolution and on the partition it is handed, and the gap between the two admissible bounds for it — the region it spans, and the points it can hold — reached more than two orders of magnitude on a measured case. A declaration fixed in advance sits somewhere in that gap for every partition it will ever see. The operator is the only party that knows which representation it will build, and hence which of the two figures is the honest one — which is why the choice is left to it rather than made here or by the planner.
 
-Both are *declared* sizes rather than measured ones, which is what makes (5) a test of a claim rather than an
-observation. An operator that declares nothing has not satisfied (1) by using little memory on one occasion.
+Making it a computed bound rather than a declared size also changes what can be checked. A figure can only be compared against itself; a function can be evaluated for the partition actually used and compared against the peak actually observed, which is what (8)'s second bullet requires.
 
-(6) closes a hole that opened when part of an evaluation began to be delegated, and the hole was in the
-*subject*. (1) binds every registered operator, and an evaluator performing delegated work is not an operator
-of the pipeline at all — so a pipeline could conform in every item while its peak memory was set by something
-no item reached. (6) identifies the evaluator by what it does rather than by what it is not, because
-"registered" is a term this specification uses without defining and a negation of it would inherit that. This
-clause's own opening sentence is what fails first: a guarantee holding for some of the work is not one a user
-can rely on when assembling a pipeline. The same correction was needed for the same reason in the projection
-obligations, where a set computed from the operators alone did not see the delegated tail either.
+(2) is what keeps the whole scheme a bound rather than an estimate, and it is available rather than hypothetical: a spatial index already records a point count per node, so summing the nodes a region intersects reads no point data. That sum can only over-count, which is the safe direction. Its looseness is worth understanding before relying on it — measured against a clumped distribution, where dense objects sit in sparse surroundings, a bound taken from nodes coarser than the partition was several times the actual count, while one taken from nodes well finer than the partition was within a few per cent. Hence the obligation to record the level: the same formula gives a usefully tight answer or a uselessly loose one depending on it, and the figure alone does not say which.
 
-(6) states its own declared figure rather than reusing (1)'s ceiling, because (1)'s ceiling is not a quantity
-an evaluation has. It is parameterised by an operator's *own* configured partition size, halo width, summary
-size and index size, and a pipeline has no single value for any of them. What (6) borrows from (1) is the
-property that matters — independence from the dataset's point count — not the arithmetic.
+(3) exists because the sum over operators is the wrong composition, and measurement puts a figure on it: over a chain of four operators the sum exceeded the peak by between 1.50 and 1.61 times across partition sizes from two to forty metres. The chain has phases — a surface built and consumed before an index is built, and that index released before a voxel grid is — so the sum charges for memory never simultaneously held.
 
-(6)'s first bullet admits refusal deliberately, and admits it because refusal is the only enforcement that
-was actually observed. An external evaluator given a bound below what its work required *refused*; no run was
-observed completing inside a bound that bit, and no peak-memory figure for such an evaluator was recorded at
-all. Writing the bullet as though enforcement meant graceful containment would have claimed more than the
-measurement supports — and would have made (5)'s protocol, which requires an input exceeding available
-memory, mandate an outcome the only measured evaluator does not produce.
+The liveness rule is stated over *operators* rather than over structures, and confined to composition *between* them, because those are the boundaries a declaration can describe. C-EXEC 1 has an operator say what it builds and which later operator still needs it, which is a structural fact of the same kind as which attributes it reads. Asking instead when a structure dies *within* an operator would be a timing claim nothing could check, so an operator's own internal phases are folded into its own bound and this item never looks inside one.
 
-(6)'s second bullet is where delegation stops being available to the portable core. An evaluator of this kind
-acquires its spill store itself: the caller may supply directories, but there is no store abstraction to
-inject, so a caller-supplied store in the sense (4) requires cannot be given. Whether an evaluator's spill
-counts as satisfying (4) is therefore decidable from its interface rather than from its behaviour, which is
-what makes this checkable before anything runs.
-"""
+How much rests on that declaration was measured by accident. A first attempt to compute a peak declared one operator as needing an earlier one's *index* when what it needed was that pass's output points; the single wrong edge kept the index live across everything after it and the computed peak came out exactly equal to the sum — the answer this item exists to avoid, reached silently and with no diagnostic. Hence C-EXEC 1's prohibition on over-declaring what outlives an operator.
+
+Two different freedoms in (3) are worth keeping apart, because one is nearly total and the other is not. The **schedule** — how many partitions run at once, on how many threads, on how many machines — is free. The **order of the operators** is not: it is constrained by which operator reads whose output, and only the remaining latitude is the planner's. An earlier form of this item said "any order" without that constraint, which read as permission to run the height-above-ground operator before the surface it reads, and would additionally have left the liveness window of the bullet above empty whenever a consumer preceded its producer.
+
+The schedule freedom is deliberate and rests on something already decided. It would be natural to record the schedule and require a committed run to reproduce it, and that would be wrong twice over: it would cap re-execution on a larger machine, and it would imply the schedule determines the result. It does not. Where an attribute admits an associative form [[RFC-0003:C-COMMIT]] 5 requires one, so combination order cannot matter; where it does not, [[RFC-0003:C-COMMIT]] 3 fixes the order from partition identity, which no schedule touches. So a scheduler may adapt to load, to a larger machine, or to more nodes, and the result is unchanged.
+
+The partitioning is nearly as free, and the reason is worth stating because the opposite is the intuitive answer. Partition size looks like it must affect a result — smaller partitions mean more boundaries, and boundaries are where neighbourhood computations go wrong. But that is precisely what the rest of this specification is arranged to prevent: a sufficient halo makes a partitioned neighbourhood computation agree exactly with its whole-dataset equivalent (C-HALO 4), and a reduction accumulating in an associative form gives the same total however the partials were grouped ([[RFC-0003:C-COMMIT]] 5). [[RFC-0003:C-COMMIT]] 8 then states the consequence directly: a committed reduction's result must not depend on the partition size at all.
+
+So the general rule is invariance rather than fixity, which is what (3)'s bullets say. A planner short of budget may use smaller partitions, and a planner with a larger machine may use bigger ones, and neither changes the answer — for every operator whose invariance the corpus already establishes. The exception is narrow and real: a reduction over an attribute admitting no associative form must combine in the order [[RFC-0003:C-COMMIT]] 3 derives from partition identity, and that order changes with the partitioning. Such a pipeline is the one a planner must refuse to resize rather than resize quietly.
+
+(4) is where the guarantee stops being per-operator. No earlier item carried a ceiling up to the process that actually exhausts, so a pipeline could conform in every item and still be defeated by enough partitions running together — which is why a pipeline of this shape is otherwise forced to forbid parallelism outright to stay safe. It is a sum rather than a product because the peaks differ: the point bound each partition supplies depends on what that region holds. How far apart two partitions' peaks fall at one size was not measured; what was measured is that the bound and the actual count diverge by up to 29.7 times on a clumped distribution, which is enough to establish that a single figure multiplied by a count is not the same quantity as the sum.
+
+(5) through (7) are unchanged in substance. Spill remains permitted and remains routed through the host interface, which is what an external evaluator cannot satisfy and hence (9)'s second bullet.
+
+(9) states its own declared figure rather than reusing (3)'s composed peak, and it has to: (3) composes operator bounds, and a delegated evaluator is not an operator, so there is no term for it to contribute. Requiring a figure of the delegation instead is what lets (3)'s terms and (8)'s comparison stay the same set.
+
+(9) closes a hole that opened when part of an evaluation began to be delegated, and the hole was in the *subject*. (1) binds every registered operator, and an evaluator performing delegated work is not an operator of the pipeline at all — so a pipeline could conform in every item while its peak memory was set by something no item reached. (9) identifies the evaluator by what it does rather than by what it is not, because "registered" is a term this specification uses without defining and a negation of it would inherit that.
+
+(9)'s first bullet admits refusal deliberately, because refusal is the only enforcement that was actually observed. An external evaluator given a bound below what its work required refused; no run was observed completing inside a bound that bit, and no peak-memory figure for such an evaluator was recorded at all. Writing the bullet as though enforcement meant graceful containment would have claimed more than the measurement supports.
+
+(9)'s second bullet is where delegation stops being available to the portable core. An evaluator of this kind acquires its spill store itself: the caller may supply directories, but there is no store abstraction to inject, so a caller-supplied store in the sense (7) requires cannot be given. Whether such spill satisfies (7) is therefore decidable from the interface rather than from behaviour, which is what makes it checkable before anything runs."""

@@ -13,11 +13,16 @@ while the camera orbits one tree, subdividing them for finer working sets. It is
 bit-identical results, because partition identity is what fixes reduction order. So it is permitted exactly
 where nothing reproducible depends on it, and desirable there.
 
-1. Partitioning used for a committed run MUST be derived only from the source's spatial index and the
-   operators' declared requirements.
-   - It MUST NOT depend on interaction history, cache state, or camera position.
-   - An adapted partitioning MUST NOT be reused for a committed run, including where one is already
-     resident.
+1. Partitioning used for a committed run MAY be chosen on whatever grounds the planner judges appropriate — the source's spatial index, the operators' declared requirements, the memory budget available to it, the machine it is running on — provided the choice cannot affect the result.
+   - The planner MUST establish that it cannot, and MAY do so from declarations alone. Two arguments carry it. A halo width verified sufficient is sufficient at any partition size, because [[RFC-0002:C-HALO]] 3 makes sufficiency a property of the operator's own neighbourhood definition rather than of the partition it is handed; agreement with the unpartitioned result ([[RFC-0002:C-HALO]] 4) then transfers between any two partitionings through that common reference. And a reduction accumulating in an associative form produces the same total however its partials were grouped ([[RFC-0003:C-COMMIT]] 5 and 8).
+   - An operator for which neither argument is available MUST be treated as **not** invariant. The classes below name what is known to move with the partitioning; they are not a list of everything that can, and absence from them establishes nothing.
+   - The partitioning MUST be recorded with the run in every case, as part of the evaluation configuration [[RFC-0003:C-COMMIT]] 4 requires. Whether the result would have moved with it does not enter: a partitioning that cannot be stated afterwards cannot be accounted for.
+   - It MUST additionally be **fixed** for the run wherever any operator in the pipeline is not invariant to it. Three classes are known not to be:
+     - a reduction over an attribute admitting no associative form, whose order [[RFC-0003:C-COMMIT]] 3 derives from partition identity;
+     - an operator declaring its output approximate under [[RFC-0002:C-APPROX]] 1, which [[RFC-0002:C-HALO]] 4 obliges only to bound its divergence from the unpartitioned reference and verify that bound, not to reproduce a single answer;
+     - an operator whose per-point values admit no associative form, which [[RFC-0002:C-HALO]] 4 admits within a declared tolerance rather than bit-identically.
+   - Where an operator's halo width was reduced under [[RFC-0002:C-HALO]] 3's allowance for a partition boundary coinciding with a summary's own cell boundaries, changing the partitioning MUST re-establish that coincidence or supply the unreduced width. Coincidence is a fact about where boundaries fall, and it does not survive their being moved.
+   - It MUST NOT depend on interaction history, cache state, or camera position, and an adapted partitioning MUST NOT be reused for a committed run even where one is already resident. This holds regardless of whether the result would differ: a partitioning chosen by where a camera happened to be pointing cannot be explained to a third party, which is what [[RFC-0007:C-PROVENANCE]] exists to make possible.
 2. Partitioning used for preview or rendering MAY adapt to access patterns, merging or subdividing freely.
 3. A cache MUST NOT subdivide a partition in order to satisfy an operator's neighbourhood requirement.
    - Supplying neighbours is the planner's duty, discharged from the declared halo width
@@ -36,11 +41,13 @@ where nothing reproducible depends on it, and desirable there.
 
 #### Rationale
 
-(1) is entailed by C-COMMIT 3, C-COMMIT 4 and [[RFC-0005:C-BINDING]] 5 taken together — reduction order
-fixed by partition identity, a recorded partition size, and a fingerprint on every derived artefact. An
-adaptive partitioning satisfies none of the three. The nested prohibition on *reuse* is stated separately
-because entailment does not stop an already-warm adapted partitioning from being picked up, which is the
-concrete way this is violated in practice.
+(1) constrains the partitioning by its *effect* rather than by the provenance of the inputs that chose it, and an earlier form of this item did the opposite: it admitted only the spatial index and the operators' declarations. That enumeration was stricter than its own reasoning, and the reasoning had quietly weakened. It rested on reduction order being fixed by partition identity — but [[RFC-0003:C-COMMIT]] 3 now exempts a reduction accumulating in an associative form, and [[RFC-0003:C-COMMIT]] 8 states outright that a committed reduction must not depend on the partition size. So for most pipelines the partitioning was already result-neutral, and the enumeration was forbidding harmless things: sizing partitions to the memory a machine actually has is the case that exposed it, since a budget appears nowhere on that list.
+
+The three non-invariant classes are named rather than left to a reader to derive, because only the first is obvious. The other two are operators the corpus deliberately admits on weaker terms — an approximate output owes a *bounded* divergence, and a value with no associative form owes agreement within a *declared tolerance* — so in both cases the delivered numbers may legitimately differ between partitionings while every obligation is met. An earlier form of this item carved out the reduction alone, which left a planner free to resize a pipeline of either kind and move figures a client had already been given.
+
+Stating the constraint as invariance is not circular, though it would be if the invariance were established the obvious way. Two badly chosen partitionings can agree with each other, so agreement between partitionings proves nothing. What the corpus compares against instead is the input in a *single* partition — a reference with no boundaries to be wrong about — which is what [[RFC-0002:C-HALO]] 4 requires for a neighbourhood operator. The reduction half is grounded differently and it is worth being exact about how, because the obvious citation is the wrong one: [[RFC-0003:C-COMMIT]] 9 compares partitionings against each other and supplies no privileged reference at all. What carries the reduction case is [[RFC-0003:C-COMMIT]] 8's *obligation* that a committed reduction's result not depend on the partition size, reached by the associative form [[RFC-0003:C-COMMIT]] 5 requires — a property of the arithmetic, established by argument rather than by comparison — with 9 as the check that the implementation has it. So one half rests on a reference and the other on an algebraic property; neither rests on two partitionings agreeing. The freedom in (1) is downstream of that verification rather than a substitute for it.
+
+The prohibition on interaction history, cache state and camera position survives the loosening, but its reason changes. It is no longer that such a partitioning would alter the answer — under the invariance above it need not. It is that a run partitioned according to a user's session cannot be *accounted for*: [[RFC-0007:C-PROVENANCE]] exists so a delivered figure can be defended to a third party, and "the partitioning followed the camera" is not a defence even when the number is right. Stating the prohibition separately also matters because entailment would not stop an already-warm adapted partitioning from being picked up, which is the concrete way this is violated in practice.
 
 (2) is not merely tolerated but wanted, and it is licensed by the same split that governs everything else:
 render state is derived and never authoritative ([[RFC-0007:C-EXTRACT]] 1 and 2), and previews are already
@@ -51,6 +58,11 @@ partition, so the cache may do whatever serves the interaction.
 [[RFC-0002:C-HALO]] already owns. The point is that a second, non-deterministic mechanism for supplying
 neighbours must not appear alongside the deterministic one.
 
+What (4) is *for* is worth stating, because nothing else here says. A survey strip running diagonally across
+the axes its source is expressed in fills an axis-aligned tiling with mostly-empty partitions, and the waste
+is not only storage: halo cost scales with boundary area, and an ill-fitting tiling is what maximises boundary
+area per point. A frame aligned to the strip addresses partition count, halo volume and occupancy at once.
+
 (4) is a permission rather than a requirement because nothing in this specification required a partition's
 bounds to be axis-aligned, so a rule mandating them would have added constraint rather than recorded
 practice. What needed writing was not the permission but the **recording**, which is why that is the only MUST
@@ -59,9 +71,10 @@ consumer places the data confidently in the wrong location, which is the hazard 
 for an absent system arriving by another route.
 
 Its three conditions each answer a clause this item would otherwise contradict. *Fixed before any run and
-recorded with the source* is what satisfies (1): a frame chosen at run time from the data is derived from
-neither the source's spatial index nor the operators' declarations, while a frame recorded with the source is
-part of how the source describes its coordinates. *Recorded in the source's own declaration* is what makes the
+recorded with the source* is what keeps the frame clear of (1): a frame computed at run time from the data
+being processed is a choice a run makes about itself, which is the kind of choice (1)'s last bullet keeps out
+of a committed run, whereas a frame recorded with the source is part of how the source describes its
+coordinates and is no more a run-time choice than its datum is. *Recorded in the source's own declaration* is what makes the
 recording achievable, since composing a coordinate reference system is not open to a library crate that must
 treat one as opaque ([[RFC-0005:C-CRS]] 2). And confining the item to where a partitioning may be
 *established* leaves moving points to [[RFC-0005:C-TRANSFORM]] 3, which is its subject.
@@ -70,6 +83,10 @@ The datum condition exists because [[RFC-0005:C-BACKEND]] 2's gate cannot be dec
 transformation — a three-parameter datum shift is itself an isometry. What decides it is whether the datum
 changes.
 
-Why an isometry rather than a general transformation, why one frame rather than a frame per partition, and what
-this item deliberately leaves unsettled about the shape of a bounding volume, are comparative questions argued
-in the accompanying architecture decision."""
+An isometry is the class that works because three quantities have to survive for a partitioning to keep describing its data: distances, since a halo width is one; containment, since membership is a containment test; and partition identity, which comes from index keys rather than from coordinates. Nothing weaker qualifies — a scaling breaks the first, and a projection breaks it unevenly across an extent, so one declared width would bound different neighbourhoods in different places.
+
+One frame is advice and not a rule because there is published work the other way. Directional binary space partitioning computes each node's orientation by principal component analysis and transforms the coordinates inside that node, on the ground that regular equal division does not suit the non-uniform distribution of most point clouds, and it reports tighter volumes, faster rendering and lower memory. Production is unanimous the opposite way — cloud-optimised point clouds, Entwine, Potree, LAStools and PDAL all partition on an axis-aligned lattice — and the reason is node identity. What per-node orientation costs here is the shared lattice node keys are computed on, and — more narrowly but more decisively — a halo is defined by crossing a partition boundary, so per-partition frames guarantee that the points a halo supplies were expressed in a different frame from the points they serve. Strong reasons for one frame; not proofs the alternative cannot work.
+
+Two things this item does not settle. It does not license *re-expressing* coordinates in such a frame, which stays [[RFC-0005:C-TRANSFORM]] 3's subject under an explicit operator; the permission is to build a partitioning over coordinates already in the frame. That is what avoids transporting bounds between frames, which cannot be done without loss: an axis-aligned box carried through a rotation is no longer axis-aligned, so keeping the representation means enclosing it in a new axis-aligned box strictly larger than the original, and each further transport inflates it again. Establishing the partitioning once, in the frame the coordinates already sit in, means no box is ever enclosed in a superset of itself. And it says nothing about whether bounds may carry an *orientation*, which [[RFC-0002:C-EXEC]] 4 leaves open.
+
+What is not yet known is whether any of this is worth having. The gain named above — the occupancy and halo-area saving on a diagonal strip — is unmeasured, as is whether one global rotation captures most of what per-node analysis would; and against it stands a cost that falls on exactly the case the permission is for: coordinates are scaled integers, and a rotation by an arbitrary angle maps them off their lattice, so re-expressing them requires rounding and a coarser accumulation quantum to declare ([[RFC-0003:C-COMMIT]] 7). A translation escapes this and a rotation does not. Until the gain is measured this item is a permission nobody need exercise, and the case for withdrawing it in favour of requiring axis-alignment is open rather than answered."""

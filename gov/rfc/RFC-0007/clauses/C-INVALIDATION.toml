@@ -49,6 +49,6 @@ invalidated — prohibits invalidating for any non-edit reason, including a part
 something, so the positive half of that phrasing carried no content and only the prohibitions did.
 
 (5) supplies the verification every other scaling claim in this specification carries —
-[[RFC-0002:C-MEMORY]] 5, [[RFC-0002:C-HALO]] 4, [[RFC-0002:C-PROJECTION]] 3. Without it, "MUST be
+[[RFC-0002:C-MEMORY]] 8, [[RFC-0002:C-HALO]] 4, [[RFC-0002:C-PROJECTION]] 3. Without it, "MUST be
 independent of the edit stack's length" is a claim no test is obliged to make, and this clause's whole
 purpose is that a day of manual correction must not make a file slower to open."""
