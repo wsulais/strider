@@ -61,8 +61,12 @@ Why **declared requirements** over a bare stream transform or a closed set of op
 
 Why spatial properties live on the **stage** rather than on tagged batches: batches stay plain Arrow
 and therefore directly consumable through the C data interface, Flight and Parquet writers, and the
-planner can reason statically instead of at runtime. Halo membership is the sole exception, being
-genuinely per-point, and is an ordinary boolean column rather than a wrapper.
+planner can reason statically instead of at runtime. Halo membership was recorded here as the sole
+exception, on the ground that it is genuinely per-point. That has since been narrowed: membership follows
+from the partition bounds the stage already declares together with the point's position, so it is *derived* rather than
+primitive, and the ordinary boolean column that records it is a cache of that derivation. The list of stage
+properties is exhaustive after all, which leaves this paragraph's reasoning intact and its exception
+unnecessary.
 
 Why the operator set is **bounded**: any operator whose peak memory tracks dataset size is excluded,
 so bounded memory stays a property of the system rather than of a subset. Globally iterative
@@ -162,4 +166,4 @@ cons = [
     "Allocates per-batch metadata for information that is constant per stage",
     "Moves planning to runtime, so unsatisfiable pipelines fail late instead of at plan time",
 ]
-rejection_reason = "It destroys the property that makes Arrow worth choosing: batches must be directly consumable through the C data interface, Flight and Parquet writers with no conversion. Spatial context describes how data was obtained, not the points, so it belongs on the stage. Halo membership is the one genuine exception, being per-point, and is carried as an ordinary boolean column instead."
+rejection_reason = "It destroys the property that makes Arrow worth choosing: batches must be directly consumable through the C data interface, Flight and Parquet writers with no conversion. Spatial context describes how data was obtained, not the points, so it belongs on the stage. Halo membership is carried as an ordinary boolean column instead, which keeps a batch plain Arrow; it is not an exception to the stage-property rule, being derived from the partition bounds that rule already covers."

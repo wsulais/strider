@@ -137,7 +137,7 @@ Three drifts to watch. First, an implicit transformation being added to make a m
 "just work" — this removes the user's only signal that two datasets were not comparable, which is why
 [[RFC-0005:C-TRANSFORM]] 4 forbids it rather than discouraging it. Second, a constrained backend
 approximating a transformation it lacks grids for: approximately right is the failure
-[[RFC-0005:C-VERTICAL]] exists to prevent, arriving through another door, hence [[RFC-0005:C-BACKEND]] 4.
+[[RFC-0005:C-VERTICAL]] exists to prevent, arriving through another door, hence [[RFC-0005:C-BACKEND]] 5.
 Third, a default vertical reference being assumed for LAS files that declare none, because the alternative
 is a tool that refuses to compute canopy heights on data users consider perfectly ordinary — this will
 arrive as a bug report and is the clause working.

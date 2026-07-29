@@ -8,6 +8,7 @@ refs = [
     "RFC-0002:C-COMPOSITION",
     "RFC-0002:C-EXEC",
     "RFC-0002:C-HALO",
+    "RFC-0005:C-TRANSFORM",
 ]
 
 # The corpus has several obligations whose whole content is a refusal, and a refusal is the
@@ -23,6 +24,13 @@ refs = [
 #     halo width, and a last carrying stage not followed by a removal; each names the stage.
 #   * [[RFC-0002:C-COMPOSITION]] 4 — a chain whose composed halo width cannot be supplied
 #     within the memory ceiling; the rejection names the chain and the width required.
+#
+# [[RFC-0005:C-TRANSFORM]] 4 joins this set: an operation combining sources whose
+# coordinate reference systems are not identical, or where one is absent, must transform
+# explicitly or fail. Same reason it belongs with the others — a suite of matching inputs
+# that all run proves nothing about an implementation that never refuses anything. Note
+# this obligation is on the OPERATION, not on the planner; field-level CRS metadata is
+# schema, so a planner can decide it before anything runs.
 [check]
 command = "devenv shell -- cargo test --release --test conformance_rejections -- --nocapture"
 timeout_secs = 1800

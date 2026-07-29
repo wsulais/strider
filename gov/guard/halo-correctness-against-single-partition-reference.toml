@@ -5,9 +5,16 @@ id = "GUARD-HALO-CORRECTNESS-AGAINST-SINGLE-PARTITION-REFERENCE"
 title = "halo correctness against single-partition reference"
 refs = [
     "RFC-0001:C-CONFORMANCE",
+    "RFC-0002:C-EXEC",
     "RFC-0002:C-HALO",
 ]
 
+# [[RFC-0002:C-EXEC]] 5 requires this same comparison to be run with any delegated
+# component PRESENT in the pipeline, not over the operators in isolation. That is the
+# only arrangement in which the failure appears: each operator satisfies everything it
+# declares when tested alone, and the defect is created by the component that
+# reorganises its input. A run over the operators alone passes on exactly the pipeline
+# that is wrong.
 [check]
 command = "devenv shell -- cargo test --release --test conformance_halo -- --nocapture"
 timeout_secs = 1800

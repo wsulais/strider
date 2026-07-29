@@ -1,0 +1,252 @@
+#:schema ../schema/adr.schema.json
+
+[govctl]
+id = "ADR-0017"
+title = "Borrow GeoArrow's vocabulary, own the enforcement"
+status = "proposed"
+date = "2026-08-01"
+refs = [
+    "ADR-0002",
+    "ADR-0010",
+    "RFC-0001:C-LICENSE",
+    "RFC-0002:C-MATERIALISATION",
+    "RFC-0002:C-PROJECTION",
+    "RFC-0006:C-LAYERING",
+    "RFC-0004:C-HOST",
+    "RFC-0004:C-PORT-GATE",
+    "RFC-0005:C-CRS",
+    "RFC-0005:C-TRANSFORM",
+]
+
+[content]
+context = """
+[[RFC-0005:C-CRS]] required a coordinate reference system to be *carried* and left three questions open: how
+it is spelled, where in a batch it travels, and how coordinates reach a consumer outside Strider. Answering
+them separately would produce three conventions; they have one answer.
+
+GeoArrow covers the spelling. It defines field-level metadata for geospatial Arrow: the system under `crs`,
+its form disambiguated by `crs_type` (PROJJSON, WKT2:2019, an authority code, an SRID), and the edge
+interpretation under `edges`. It also defines a coordinate layout — the **separated** representation, a single
+field whose children are the axes — and requires the extension name and metadata to sit on that top-level
+field, never on the children. The specification is at version 0.2 and has no 1.0.
+
+The Rust implementation is **`geoarrow-schema`**, at 0.8.0, under `MIT OR Apache-2.0` — within what
+[[RFC-0001:C-LICENSE]] 4 permits a dependency to impose. It has been modular since its own 0.4 refactor, and this
+crate holds the type and metadata definitions alone: `arrow-schema`, `geo-traits`, `serde`, `serde_json` and
+`thiserror`, with no geometry algorithms and no transformation database. Its types implement the
+`ExtensionType` trait `arrow-schema` itself defines, so extension names and metadata are handled by the crate
+that owns that concept. Its `Crs` holds a parsed JSON value whose derived structural equality is exactly the
+identity comparison [[RFC-0005:C-CRS]] 2 permits and item 4 of [[RFC-0005:C-TRANSFORM]] requires — the
+comparison Strider needs is the one the type already gives.
+
+Each of its versions requires a particular Arrow major, and most releases move it: 0.4.0 wanted ^55, 0.5.0
+through 0.6.2 wanted ^56, 0.7.0 wants ^57, and 0.8.0 wants ^58. It is not mechanical — the 0.6 series held at
+^56 across three releases — but over five minors the Arrow requirement moved three times. Strider's workspace
+declared 56.
+
+What the specification does **not** do is say what a consumer must do when two arrays disagree about their
+systems. That is left unspecified.
+
+Four measurements settled the rest, and one of them overturned an earlier conclusion in this same decision.
+
+*Composing three sibling coordinate arrays into the separated layout, and decomposing again, moves no
+coordinate bytes.* Every buffer address survived in both directions, compared transitively.
+
+*The separated layout costs a projection nothing.* An earlier draft of this decision rejected the layout for
+internal use on a measured figure of three times the bytes to read one axis. That figure was wrong — not
+mis-measured, but measuring the wrong thing. It came from an interface that addresses top-level fields, so it
+recorded that interface's granularity rather than a property of the layout. Measured properly: a child is
+reachable on its own with no copy, at its own size; and at the decode where a projection's saving actually
+lands, pruning is *identical* between layouts — summing one axis from a Parquet file scanned 1251 bytes
+against 979861 for all three, the same figures either way, with the child extraction pushed into the scan.
+
+*Field-level metadata survives an operation that mixes two systems; batch-level metadata does not.* Joining an
+EPSG:25832 input to an EPSG:4326 one, field metadata kept **both** systems, one per surviving field. Batch
+metadata kept one of them and recorded nothing about having chosen. The result did not lose its system; it
+asserted one that was wrong for the other of its two coordinate columns, with no error raised anywhere. The
+prediction going in was that batch metadata would be *dropped*, which would have been the benign outcome. A
+control reversing both the join order and the registration order confirmed the surviving value follows
+whichever input leads rather than being fixed, though it cannot separate leading-ness from registration
+order.
+
+That comparison was first run on flat coordinate fields carrying Strider's own metadata keys — which is
+neither the layout nor the vocabulary this decision adopts, so generalising from it would have repeated the
+error the previous measurement made. Repeated in the adopted representation, with the system in
+`ARROW:extension:metadata` on a `geoarrow.point` field, both systems survived, one per surviving field. The
+finding is layout-independent as measured rather than as assumed."""
+decision = """
+Adopt the encoding — vocabulary *and* layout — and take it from `geoarrow-schema` rather than restating it.
+Carry the coordinate reference system on the coordinate field. Keep mismatch enforcement. Move the workspace
+to Arrow 58 as part of this decision. The obligations are in [[RFC-0005:C-CRS]]; this records why.
+
+Why **depend** rather than restate: what a vocabulary is worth is agreement, and a copied vocabulary drifts
+silently — a spelling that no longer matches is indistinguishable, to a consumer, from data that was never
+conformant. What is taken is a set of type definitions and a metadata vocabulary, not a trait Strider
+implements.
+
+Why the **layout** and not only the vocabulary: because it costs nothing, and because the earlier answer cost
+something. Carrying sibling axes internally and composing them only at an export boundary means maintaining
+two representations and a conversion between them, permanently, to avoid a penalty that measurement showed
+does not exist. It also cannot carry the vocabulary honestly: `crs` and `edges` are the extension metadata
+*of a geometry field*, so three sibling fields bearing those keys are not conformant to the specification
+being invoked, and an implementation would be hand-writing the keys — which is the alternative this decision
+rejects.
+
+Why **field**-level rather than batch-level: because batch metadata has one slot for two answers, and what it
+does when there are two is keep one without saying so.
+
+Why enforcement stays **ours**: the specification is silent on it. Adopting an encoding is not adopting a
+safety property, and the one way this goes wrong is believing otherwise.
+
+Why **Arrow 58**, stated carefully because two tempting justifications are both wrong. It is *not* that the
+analytical engine pins 58: that engine is forbidden beneath the library crates ([[RFC-0006:C-LAYERING]] 1), so
+what it pins says nothing about the graph this dependency enters. And it is *not* that a version split would
+force a data copy at the adapter boundary — measured, a round trip through the Arrow C Data Interface
+preserved every column's buffer address, so a cross-version handoff costs per-array marshalling proportional
+to the number of columns, not to the number of rows. That measurement belongs here precisely because it
+undercuts the easier argument.
+
+The reasons that hold are narrower. `geoarrow-schema` 0.8.0 requires `arrow-schema` ^58, and taking an older
+release to avoid the bump is its own alternative, rejected below. A single Arrow major across the workspace
+also keeps one `Field` type rather than two mutually unassignable ones at every internal boundary, which is a
+source-level cost rather than a per-row one. And the bump is cheapest now, with a single crate in the
+workspace, than at any later point."""
+consequences = """
+### Positive
+
+There is one coordinate representation, conformant everywhere, with no boundary conversion to write or
+maintain — any GeoArrow consumer reads a Strider batch in process without a copy of the coordinate bytes.
+(Across an IPC or Flight boundary it is still serialised; what is avoided is a conversion pass, not
+serialisation.) The spelling of a coordinate reference system stops being Strider's to maintain or to get
+subtly wrong, and the identity comparison [[RFC-0005:C-CRS]] 2 permits is the one the borrowed type already
+implements. A mismatch is *detectable*, because the metadata carrying it survives the operation that mixes two
+systems, which is what makes the refusal implementable rather than aspirational. Per-axis projection is
+retained: [[RFC-0002:C-PROJECTION]] keeps its granularity because a child is independently readable both in
+memory and at decode.
+
+### Negative
+
+**The churn objection [[ADR-0002]] raised applies here too, and is conceded rather than distinguished away.**
+`geoarrow-schema` shipped four breaking minor releases in the ten months from 0.4.0 to 0.8.0 — roughly one
+every two and a half months, comparable to the one-to-two-month cadence [[ADR-0002]] refused to absorb. The
+distinction is therefore *not* cadence. It is surface: what is depended on is a metadata vocabulary and a set
+of type constructors, so a breaking change lands as changed spellings in one module, and reversal is
+restating three keys. [[ADR-0002]] was declining to track a physical-plan trait that Strider would implement
+and that every custom operator would inherit. Those are different exposures at a similar frequency, and the
+frequency is real.
+
+**The Arrow coupling is real in one direction and partial in the other.** Because a given
+`geoarrow-schema` release pins an Arrow major, Strider cannot move Arrow ahead of a `geoarrow-schema` release
+that supports it. The converse is weaker than it first appears: the 0.6 series held at ^56 across three
+releases, so taking a newer `geoarrow-schema` does not always move Arrow. Over five minors it moved three
+times. Two version decisions that were independent are now coupled, unevenly.
+
+**Adopting the layout imports pre-1.0 *specification* exposure into the core, not only pre-1.0 crate
+exposure.** This is the cost the rejected boundary-wrap alternative did buy off: carrying sibling axes
+internally would have left the internal representation entirely Strider's, with the specification's reach
+confined to an export boundary. Adopting the layout means a change to how the specification represents
+coordinates is a change to the internal representation. Against that: the specification has had the separated
+layout since before 0.2 and recommends it, and the reversal — reinstating sibling fields plus a conversion —
+is bounded work rather than a redesign, though it is more than the "restating three keys" that reversing the
+vocabulary alone would cost.
+
+**Per-axis projection is retained but not free.** The layout costs nothing; reaching one axis needs an
+interface that addresses a child rather than a top-level field, which the standard record-batch projection
+does not — that limitation is exactly what produced the retired three-times figure. [[RFC-0005:C-CRS]] 4
+therefore obliges declarations and projections to be granular to the same depth, and satisfying it is work
+this decision creates.
+
+A second duplicate also enters: this crate requires `thiserror` ^1 where the workspace pins 2. No type crosses
+between them, so it costs compile time and graph size rather than correctness, but the "no second copy"
+framing covers Arrow only.
+
+The enforcement obligation is ours permanently, and the specification will not announce it if a later version
+grows a way to express it. Someone has to look.
+
+### Neutral
+
+[[ADR-0010]]'s choice of transformation backend is untouched: this is the *encoding* of a coordinate reference
+system, not the interpretation of one. The two compose — an opaque system is carried in a standard spelling
+and handed to the host when it must be interpreted. Nothing here engages [[RFC-0004:C-HOST]] 1 either, since
+the dependency opens no filesystem; that it also contains no geometry algorithms matters for dependency mass
+rather than for host capability. It is pure Rust with no filesystem, socket or thread use, so
+[[RFC-0004:C-PORT-GATE]] 1 remains satisfiable.
+
+A composite coordinate field is one of the attribute shapes that defeats a naive memory-identity check, having
+no data buffers of its own — which is why [[RFC-0002:C-MATERIALISATION]] 4 specifies the comparison
+transitively. Adopting this layout makes that specification load-bearing rather than precautionary.
+
+Watch for the dependency growing from this crate into the array or amalgam crates. That would mean geometry
+algorithms arriving beneath the core, which is a different decision from this one and should be taken as
+one."""
+
+[[content.alternatives]]
+text = "Adopt GeoArrow's encoding and its separated layout, taking the type and metadata definitions from geoarrow-schema, carrying the system on the coordinate field, and moving the workspace to the Arrow major that crate requires"
+status = "accepted"
+pros = [
+    "One coordinate representation, conformant at every boundary, with no conversion to maintain",
+    "Measured: the layout costs a projection nothing — a child is readable alone in memory, and Parquet prunes to the leaf identically for both layouts",
+    "Field metadata survives an operation combining two systems, so a mismatch can be seen and refused",
+    "The borrowed type's derived equality is exactly the identity comparison the corpus permits",
+    "No transformation database and no filesystem use, so host-capability and portability obligations are untouched",
+]
+cons = [
+    "A pre-1.0 dependency, breaking roughly every two and a half months, in the crate that owns the coordinate representation",
+    "Arrow and geoarrow-schema versions become one decision instead of two, in both directions",
+    "A second thiserror major enters the graph",
+]
+
+[[content.alternatives]]
+text = "Borrow only the vocabulary: keep sibling x/y/z fields inside a pipeline and compose them into the conformant single field at an export boundary"
+status = "rejected"
+pros = [
+    "Measured: composing and decomposing moves no coordinate bytes, so the boundary conversion is cheap",
+    "Leaves the internal representation entirely under Strider's control",
+]
+cons = [
+    "Two representations and a conversion between them, maintained permanently",
+    "Three sibling fields carrying the specification's keys are not conformant to it, since those keys are the extension metadata of a geometry field — so the keys would be hand-written after all",
+    "The figure that motivated it measured an interface's granularity, not the layout: corrected, the layout costs a projection nothing",
+]
+rejection_reason = "This was the earlier answer here, and it rested on a measurement that measured the wrong thing — a three-times figure produced by an interface that addresses top-level fields rather than by the layout. With that corrected there is no penalty to avoid, so the arrangement buys a permanent second representation and a conversion in exchange for nothing. It also could not carry the vocabulary conformantly, which is the reason the dependency was being taken."
+
+[[content.alternatives]]
+text = "Adopt the vocabulary but restate it in Strider, taking no dependency"
+status = "rejected"
+pros = [
+    "No dependency, no pre-1.0 churn, no coupling between Arrow and anything else",
+    "Complete freedom over the internal representation",
+]
+cons = [
+    "What a shared vocabulary is worth is agreement, and a restated one drifts with no signal that it has",
+    "A drifted spelling is indistinguishable, to a consumer, from data that was never conformant",
+    "Reimplements the extension-type handling that arrow-schema and this crate already provide between them",
+]
+rejection_reason = "The churn is real and this alternative avoids it, which is why it is the closest call. It loses on what the dependency is actually for: the value of a vocabulary is that someone else decides what the spelling is, and a copy keeps the maintenance while giving that up. The exposure being a vocabulary rather than an implemented trait is what makes the churn affordable here where a larger dependency's was not."
+
+[[content.alternatives]]
+text = "Pin geoarrow-schema 0.6.2, which requires the Arrow major the workspace already declared, and leave Arrow where it was"
+status = "rejected"
+pros = [
+    "No Arrow bump, and no duplicate Arrow in the graph",
+    "Smallest immediate change",
+]
+cons = [
+    "Two minors stale on adoption, against a crate that breaks every two and a half months",
+    "Defers the coupling rather than avoiding it: because each minor tracks an Arrow major, any later Arrow move still waits on a geoarrow-schema release",
+    "The engine adapter needs the newer Arrow for its handoff to stay a pointer clone, so the workspace would have to carry two Arrow majors instead",
+]
+rejection_reason = "It buys a smaller diff today and pays for it twice: stale on arrival, and the version coupling arrives anyway the first time Arrow moves. The bump is cheapest now, with one crate in the workspace, and gets dearer with every crate added."
+
+[[content.alternatives]]
+text = "Adopt GeoArrow's interleaved coordinate layout instead of the separated one, storing the axes in a single buffer"
+status = "rejected"
+pros = [
+    "Also conformant, and equally free at any boundary",
+    "One buffer per geometry rather than one per axis, which suits whole-point access",
+]
+cons = [
+    "Deduced, not measured: one interleaved buffer is one Parquet column chunk, so reading the vertical axis alone is not expressible at any level, in memory or at decode",
+    "Not what the specification recommends for natively encoded arrays",
+]
+rejection_reason = "This is the layout that would genuinely cost what the separated layout was wrongly believed to cost. An operator reading one axis would decode all three with no way to express otherwise, which is the waste [[RFC-0002:C-PROJECTION]] exists to remove."

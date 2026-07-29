@@ -16,8 +16,29 @@ rather than slow ones.
 
 1. Halo points supplied to satisfy an operator's declared halo width (C-EXEC 1) MUST be distinguishable
    from the partition's own points by a dedicated boolean attribute in the batch.
-   - An operator MAY read halo points.
-   - An operator MUST NOT relabel a halo point as a core point.
+   - What that attribute records is fixed rather than chosen. A point handed to an operator is a **core
+     point** of the partition it was handed for where its position lies within that partition's **bounds**
+     (C-EXEC 4), and a **halo point** otherwise. Nothing else may decide it — not an ordering among the
+     partitions whose halo reaches the point, and not a choice made wherever the partition was assembled.
+   - Whether a face of the bounds includes the positions lying on it is given by the bounds themselves
+     (C-EXEC 4), which state each face as closed or open. A partitioning that assigns closedness as C-EXEC 4
+     requires therefore makes a point lying exactly on a boundary a core point of exactly one of the
+     partitions sharing it, and leaves no position within its extent belonging to none. Coordinates are
+     scaled integers and boundaries fall on chosen values, so a point lying exactly on a face is ordinary
+     rather than limiting.
+   - The count applies within **one** partitioning. Where a source is partitioned at several levels of
+     detail, each level is its own partitioning, and a point is a core point of one partition per level.
+   - The attribute is therefore a **cache** of a property the batch already determines, and its value MUST
+     agree with that property at every point. Where the two disagree, the attribute is wrong.
+   - The attribute MUST be dedicated to this purpose. Recording halo membership by overloading an attribute
+     that already carries a meaning of its own MUST NOT be treated as satisfying this.
+   - An operator MAY read halo points. It MUST NOT write the attribute: membership is not the operator's
+     to assign, and writing it can only put the cache at odds with the property it caches.
+   - An operator that alters point positions MUST either apply the same alteration to the partition's
+     bounds, or declare that the partitioning it was given does not hold of its output. Applying it
+     to the volume is sufficient only where doing so preserves membership, the declared halo width and
+     partition identity together; where it does not, the partitioning MUST be established afresh
+     ([[RFC-0005:C-TRANSFORM]] 3) before any operator declaring a nonzero halo width consumes the output.
    - An operator MAY carry halo points to its output, still marked as halo, only where that output is
      consumed by another operator of the same pipeline declaring a nonzero halo width. Otherwise its output
      MUST contain no halo points.
@@ -42,10 +63,16 @@ rather than slow ones.
      straddle every boundary if its origin is offset.
 4. Conformance to (3) MUST be verified, for each operator declaring a nonzero halo width, by comparing
    output computed over multiple partitions against output computed with the input in a single partition.
-   - Where the operator does not declare its output approximate, the two MUST agree exactly under the
-     accumulation regime the operator uses: bit-identically where its reductions accumulate associatively
-     ([[RFC-0003:C-COMMIT]] 5), and otherwise within the declared accumulation quantum
-     ([[RFC-0003:C-COMMIT]] 7). A difference beyond that is evidence the declared width is too small.
+   - Where the operator does not declare its output approximate, the two MUST agree under whichever regime its
+     reductions use: bit-identically where they accumulate associatively ([[RFC-0003:C-COMMIT]] 5); within the
+     declared accumulation quantum where one is declared ([[RFC-0003:C-COMMIT]] 7); and, where the operator
+     has declared that its values admit no associative form ([[RFC-0003:C-COMMIT]] 5), within a tolerance the
+     operator declares as a function of the number of values combined per emitted point. A difference beyond
+     the applicable figure is evidence the declared width is too small.
+   - That third tolerance MUST NOT be declared where an associative form is available, and MUST NOT be
+     widened to absorb a difference an insufficient halo caused. It exists only because combining one
+     neighbourhood in two different orders can differ in the last place, which is a property of the
+     arithmetic rather than of the halo.
    - Where it does declare its output approximate, the divergence MUST be bounded and that bound MUST be
      verified.
 5. Removing a halo MUST reduce the batch to the contiguous range of its core points, without rewriting the
@@ -55,10 +82,16 @@ rather than slow ones.
    - It MUST NOT instead gather the core points from a mis-ordered batch. The gather is what
      C-MATERIALISATION 1 forbids, and reducing a mis-ordered batch to a range would silently emit halo
      points and drop core points.
-6. Conformance to (5) MUST be verified by the memory-identity comparison C-MATERIALISATION 4 defines,
-   together with a check that the point count after removal equals the batch's core point count.
+6. Conformance to (1)'s agreement and to (5) MUST be verified by the memory-identity comparison
+   C-MATERIALISATION 4 defines, together with a check that the point count after removal equals the batch's
+   core point count, and a check that the halo attribute agrees with (1) at every point when evaluated
+   against the partition's bounds, including the closedness those bounds state for each face.
    - The count check is not redundant: memory identity holds for a range taken at the wrong offset or
      length, so it cannot detect a range that is shared but wrong.
+   - The agreement check MUST be a conformance verification and MUST NOT be imposed on every batch a stage
+     removes a halo from. Evaluating (1) needs the position attributes, so requiring it at each removal
+     would oblige a pipeline to carry those attributes through stages that read none of them — the waste
+     C-PROJECTION exists to remove. The stage that assembles a partition holds the positions already.
 7. A stage that carries halo points to its output under (1) MUST declare that it does, as a property of the
    stage (C-EXEC 4).
    - A planner MUST reject a pipeline in which a stage declaring carry-forward has a consumer that declares a
@@ -69,9 +102,41 @@ rather than slow ones.
 
 #### Rationale
 
-Halo membership is the only spatial property that is genuinely per-point rather than per-stage, so it
-cannot live where C-EXEC 4 puts the others. Carrying it as an ordinary boolean column keeps C-EXEC 3
-intact — an external Arrow consumer sees a normal column, not an envelope.
+Halo membership is per-point but not primitive: it follows from the point's own position together with the
+partition bounds C-EXEC 4 already makes a property of the producing stage. That is why (1) fixes the geometry
+first and the column second. An earlier form of this clause named only the column, which left *what makes a
+point core* to whoever assembled the partition — and with scaled-integer coordinates and boundaries on chosen
+values, a point lying exactly on a shared boundary is common rather than exotic. Two assemblers could decide
+it oppositely, both conform, and between them duplicate or lose it: the silent class (2) exists to prevent.
+The half-open convention costs nothing and closes it. Which limit is the closed one is arbitrary; that it is
+stated is not.
+
+The exception for the partitioning's own outer limit is not a nicety. A half-open rule applied to *every*
+limit gives a point on the outermost upper boundary no owning partition at all, and (5)'s range reduction then
+discards it from every one — so the count guarantee below would be false for exactly those points. They are
+not hypothetical: a LAS header records the maximum coordinate on each axis, so a point attaining it exists by
+construction in most files. Closing the outer limit costs one comparison and is the difference between a rule
+that partitions the input and one that quietly loses a face of it.
+
+Fixing the geometry as the definition is also what makes the column **falsifiable**. A stored label with no
+stated meaning cannot be wrong, so an obligation about it cannot be checked; a cache of a defined property
+can be wrong, and (6) checks it.
+
+The column is nonetheless kept rather than derived at each use, for a reason that has nothing to do with the
+label. What cannot be recovered from partition bounds is (1)'s **ordering** — which rows form the leading
+contiguous run is not a geometric fact — and the core count that makes removal a range (5) is unfalsifiable
+without something independent to check it against. The column is that something, at one bit per point.
+Deriving membership instead would cost the position attributes in every projection reaching a halo-bearing
+stage, including for operators that read none of them. Carrying it as an ordinary boolean column also keeps
+C-EXEC 3 intact — an external Arrow consumer sees a normal column, not an envelope.
+
+The requirement that the attribute be *dedicated* is there because the cheap alternative has been tried at
+scale. LAStools' `lastile` records buffer membership by setting each buffer point's **withheld** flag — an
+attribute whose defined meaning in the LAS specification is that a return is unreliable — and the United
+States Geological Survey has since published guidance restricting what that flag may be taken to mean. An
+overloaded attribute makes halo membership
+indistinguishable from whatever else the attribute records, and exports the ambiguity to every consumer of
+the file.
 
 **Never relabel** is what prevents duplication, and it is a narrower rule than never-emit. A point near a
 boundary is supplied to every partition whose halo reaches it; if each turned it into a core point, it would
@@ -79,6 +144,31 @@ appear several times in the output. Carrying it forward *still marked as halo* d
 is removed before any operation depending on disjointness (2) and before the pipeline's output. What the rule
 guarantees is that a partitioned neighbourhood computation produces the same core point count as its
 whole-dataset equivalent.
+
+The position bullet exists because (1) defines membership geometrically, which makes displacement a way of
+changing membership without touching any label — a path a clause naming only the label could not describe.
+But it is stated as a duty to keep the volume and the positions *together*, not as a prohibition on moving
+points, because the prohibition would have been wrong twice over: it would have forbidden the partition-wise
+reformulations C-MEMORY 2 expressly admits, and it would have treated a whole class of safe operators as
+unsafe.
+
+The safe class is the one where the alteration is an **isometry**, and three quantities have to survive for a
+partitioning to still hold of the output. An isometry preserves all three at once. Distances, so a declared
+halo width is still a width. Containment, so no point changes which side of a boundary it lies on. And
+partition identity, which comes from spatial index node keys rather than from coordinates, so the fixed
+reduction order [[RFC-0003:C-COMMIT]] 3 derives from those keys is untouched. Moving the bounds by
+the same isometry therefore costs nothing and needs no re-establishment. A translation is the extreme case:
+coordinates are stored as scaled integers about an offset, so translating is a change of offset with no
+per-point arithmetic at all and — unlike a reprojection — no requantisation, so the accumulation quantum
+survives too.
+
+The bullet requires those three properties rather than naming the permitted transformations, because one
+question is deliberately left open. A general rotation maps an axis-aligned volume to an oriented one, so
+carrying it exactly preserves all three but obliges the partitioning to admit oriented volumes, while
+replacing it with its axis-aligned bound reintroduces overlap between neighbours and with it the very
+duplication this rule prevents. Translations and quarter turns are exact under either treatment. Stating the
+properties lets an implementation carry the volume wherever it genuinely can, and fall back to
+re-establishment where it cannot, without this clause having to settle the shape of a bounding volume.
 
 The non-disjointness rule (2) exists because the failure is silent. An aggregation over a halo
 partitioning does not fail, log, or crash — it returns a plausible number, too large in proportion to the
@@ -123,10 +213,22 @@ which is where C-EXEC 2 already decides everything else of this kind.
 requirement that a passing test suite can silently fail to exercise. Conformant pipelines running proves
 nothing about a planner that never rejects anything.
 
-(4) is the verification that cannot be faked, and the identical-not-approximate requirement is stronger
-than it looks. It is tempting to treat small boundary differences as an acceptable tolerance; they are
-not. A sufficient halo makes partitioning exactly lossless, so a difference is evidence the declared width
-is too small — a correctness defect that grows as partitions get smaller.
+(4) is the verification that cannot be faked, and its three regimes exist because an earlier form required
+the two runs to agree *exactly* and the evidence does not support that. What a sufficient halo makes lossless
+is the **neighbourhood set**: every emitted point sees the neighbours a whole-dataset run would have given it.
+It does not make the arithmetic identical. Measured, a mean over a neighbourhood agreed to within one part in
+ten thousand of a millionth of a millionth — about one unit in the last place — at a sufficient width *and* at
+a composed-sufficient width, because the same values were summed in a different order. An exact-agreement rule
+would therefore have failed a conformant operator.
+
+The regimes are ordered so that the loosest is hardest to reach. Where values admit an associative form
+[[RFC-0003:C-COMMIT]] 5 already requires one, and then agreement is bit-identical with nothing to tolerate.
+The declared tolerance is available only to an operator that has declared, under the same item, that its
+values admit no associative form — which is a real class: an eigen-decomposition over a covariance matrix has
+no useful associative accumulator. Without the third regime that class had no reachable criterion at all,
+since such an operator has no accumulation quantum either. What the tolerance must not become is a place to
+hide an insufficient halo, which is why it is a stated function of the neighbourhood size rather than a
+constant: an inadequate width produces a difference that does not scale that way.
 
 (1)'s ordering bullet exists to make (5) achievable, and the obligation is on the batch *handed to an
 operator* rather than on every batch in existence, because the stage that assembles a partition is the one

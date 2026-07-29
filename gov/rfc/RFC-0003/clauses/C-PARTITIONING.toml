@@ -22,6 +22,10 @@ where nothing reproducible depends on it, and desirable there.
 3. A cache MUST NOT subdivide a partition in order to satisfy an operator's neighbourhood requirement.
    - Supplying neighbours is the planner's duty, discharged from the declared halo width
      ([[RFC-0002:C-EXEC]] 1 and [[RFC-0002:C-HALO]] 3).
+4. A partitioning MAY be established in a frame related to the source's frame by an isometry.
+   - The isometry MUST be recorded as part of the coordinate reference system the resulting coordinates
+     carry ([[RFC-0005:C-CRS]] 1). Leaving it implicit MUST NOT be treated as satisfying this.
+   - One frame SHOULD serve a whole partitioning rather than a separate frame per partition.
 
 #### Rationale
 
@@ -38,4 +42,37 @@ partition, so the cache may do whatever serves the interaction.
 
 (3) is stated as a prohibition on the *cache* rather than as a restatement of the planner's duty, which
 [[RFC-0002:C-HALO]] already owns. The point is that a second, non-deterministic mechanism for supplying
-neighbours must not appear alongside the deterministic one."""
+neighbours must not appear alongside the deterministic one.
+
+(4) is a permission rather than a requirement, and it is worth stating because the thing it permits is easy
+to reach for badly. A survey strip running diagonally across the source's axes fills an axis-aligned tiling
+with mostly-empty partitions, and empty partitions are not merely wasteful: halo cost scales with boundary
+area, and an ill-fitting tiling is precisely what maximises boundary area per point. Establishing the
+partitioning in a frame that fits the data addresses both at once.
+
+It is an isometry specifically because that is the class [[RFC-0002:C-HALO]] 1 already shows preserves
+everything a partitioning depends on — distances, so declared halo widths stay widths; containment, so
+membership is unchanged; and partition identity, so the reduction order C-COMMIT 3 derives from spatial index
+keys is untouched. Nothing further needs saying about safety.
+
+The recording obligation is the only MUST here because it is the only part with a silent failure. Coordinates
+in an unrecorded frame are indistinguishable from coordinates in the source's frame, so every consumer places
+the data confidently in the wrong location — the same hazard [[RFC-0005:C-CRS]] 3 refuses for an absent
+system, arriving by a different route. Recording it in the coordinate reference system is also what keeps
+(1) satisfied for a committed run: once the frame is part of how the coordinates are described, choosing it
+is not a runtime adaptation, even where the rotation was originally derived from the data.
+
+One frame per partitioning is a SHOULD and not a MUST because the literature does the other thing and may be
+right for cases this project has not measured. Orienting *each node* by principal component analysis is an
+established technique and reports tighter volumes than a single rotation. What it costs is the global
+lattice: node keys computed from coordinates presume one frame, and a halo crosses partition boundaries by
+construction, so per-partition frames make a halo's points arrive in a different frame from the core points
+they serve, and leave the grid-alignment reasoning in [[RFC-0002:C-HALO]] 3 without a common grid to reason
+about. Those are strong reasons for one frame and not proofs that per-partition frames cannot be made to
+work, so the clause advises rather than forbids.
+
+Nothing here constrains the *shape* of a partition's bounds. [[RFC-0002:C-EXEC]] 4 requires bounds to be
+declared and says nothing about their orientation, and [[RFC-0002:C-HALO]] 1 is deliberately written in terms
+of properties an alteration must preserve rather than transformations it may apply. An implementation that
+finds oriented bounds worth the cost is not obstructed; it is simply not the arrangement this clause makes
+cheapest."""

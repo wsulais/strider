@@ -26,7 +26,7 @@ implementation.
    configuration ([[RFC-0003:C-COMMIT]] 4) MUST include:
    - the backend's identity and version;
    - the version of any transformation database or grid set consulted.
-4. A backend that cannot perform a requested transformation MUST fail, naming what it could not do.
+5. A backend that cannot perform a requested transformation MUST fail, naming what it could not do.
    - It MUST NOT substitute a coarser transformation that approximates the request.
 
 #### Rationale
@@ -53,7 +53,7 @@ Recording the *database and grid versions* matters as much as the backend: the s
 with an updated transformation database can legitimately produce a different, better answer, and a result
 that cannot say which database produced it is not reproducible even with the same software.
 
-(4) forbids the accommodating behaviour. A constrained backend asked for a transformation it lacks grids for
+(5) forbids the accommodating behaviour. A constrained backend asked for a transformation it lacks grids for
 could apply a coarser equivalent and be approximately right — which is the failure C-VERTICAL exists to
 prevent, arriving through a different door.
 

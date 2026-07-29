@@ -34,6 +34,18 @@ meet it.
 5. Conformance to (1) MUST be verified by processing inputs of at least two sizes differing by at least an
    order of magnitude, the larger exceeding available memory, and demonstrating that peak memory does not
    scale with input size.
+6. Where a pipeline delegates part of its evaluation to an **external evaluator** — anything that computes
+   over the pipeline's data without being one of its operators — the pipeline's peak memory MUST be bounded by
+   a declared figure, and that figure MUST NOT be a function of the dataset's total point count.
+   - The stage that delegates MUST supply the external evaluator a memory bound, and MUST NOT delegate to
+     one that cannot be given a bound. An evaluator that *refuses* work on reaching its bound satisfies
+     this; one that exceeds it silently does not.
+   - An external evaluator satisfying its bound by spilling to storage it acquires for itself does not
+     satisfy (4). A library crate subject to (4) MUST NOT depend on such an evaluator.
+   - Where such a delegation occurs, conformance MUST be verified by (5)'s protocol applied to the pipeline
+     including the delegated work, by whatever integrates the evaluator. Measuring the registered operators
+     alone MUST NOT be treated as satisfying this, and this item imposes no verification on a pipeline that
+     delegates nothing.
 
 #### Rationale
 
@@ -49,4 +61,31 @@ partition is bounded by the partition.
 
 Both are *declared* sizes rather than measured ones, which is what makes (5) a test of a claim rather than an
 observation. An operator that declares nothing has not satisfied (1) by using little memory on one occasion.
+
+(6) closes a hole that opened when part of an evaluation began to be delegated, and the hole was in the
+*subject*. (1) binds every registered operator, and an evaluator performing delegated work is not an operator
+of the pipeline at all — so a pipeline could conform in every item while its peak memory was set by something
+no item reached. (6) identifies the evaluator by what it does rather than by what it is not, because
+"registered" is a term this specification uses without defining and a negation of it would inherit that. This
+clause's own opening sentence is what fails first: a guarantee holding for some of the work is not one a user
+can rely on when assembling a pipeline. The same correction was needed for the same reason in the projection
+obligations, where a set computed from the operators alone did not see the delegated tail either.
+
+(6) states its own declared figure rather than reusing (1)'s ceiling, because (1)'s ceiling is not a quantity
+an evaluation has. It is parameterised by an operator's *own* configured partition size, halo width, summary
+size and index size, and a pipeline has no single value for any of them. What (6) borrows from (1) is the
+property that matters — independence from the dataset's point count — not the arithmetic.
+
+(6)'s first bullet admits refusal deliberately, and admits it because refusal is the only enforcement that
+was actually observed. An external evaluator given a bound below what its work required *refused*; no run was
+observed completing inside a bound that bit, and no peak-memory figure for such an evaluator was recorded at
+all. Writing the bullet as though enforcement meant graceful containment would have claimed more than the
+measurement supports — and would have made (5)'s protocol, which requires an input exceeding available
+memory, mandate an outcome the only measured evaluator does not produce.
+
+(6)'s second bullet is where delegation stops being available to the portable core. An evaluator of this kind
+acquires its spill store itself: the caller may supply directories, but there is no store abstraction to
+inject, so a caller-supplied store in the sense (4) requires cannot be given. Whether an evaluator's spill
+counts as satisfying (4) is therefore decidable from its interface rather than from its behaviour, which is
+what makes this checkable before anything runs.
 """

@@ -21,10 +21,19 @@ the points alone.
 3. Transformation of point coordinates MUST occur only through an explicit operator.
    - Such an operator MUST declare zero halo width and a single pass ([[RFC-0002:C-EXEC]] 1).
    - Conversion between vertical references is such a transformation and is subject to this item.
+   - Where the transformation is not an isometry, such an operator's output MUST NOT be treated as
+     partitioned by the partitioning its input carried, and a partitioning MUST be established afresh over
+     the transformed coordinates before any operator declaring a nonzero halo width consumes them. Where it
+     is an isometry, [[RFC-0002:C-HALO]] 1 governs instead, and the partitioning may be carried across by
+     applying the same isometry to the bounds.
 4. An operation combining sources whose coordinate reference systems are not identical MUST either include
    an explicit transformation operator or fail.
-   - Where it fails, the failure MUST name the mismatch.
+   - Where it fails, the failure MUST name the mismatch. Where one system is absent ([[RFC-0005:C-CRS]] 3),
+     the failure MUST say so rather than naming a default.
    - It MUST NOT transform implicitly to make the operation succeed.
+   - Conformance MUST be verified by presenting an operation with mismatched systems and one with an absent
+     system, and confirming the failure in each. Presenting only matching systems and observing that they
+     run MUST NOT be treated as satisfying this.
 
 #### Rationale
 
@@ -33,11 +42,34 @@ transforming the points it contains costs billions. Beyond cost, LAS and COPC st
 integers, so reprojection requires requantisation — which is lossy, and coarsens the accumulation quantum
 that every committed reduction over the result must then declare ([[RFC-0003:C-COMMIT]] 7). It does not cost
 bit-identity: a reprojected cloud is still scaled integers, so it still admits the associative accumulation
-[[RFC-0003:C-COMMIT]] 5 requires. What is lost is precision, permanently, in everything derived from it. Keeping points in their native system also means references into
+[[RFC-0003:C-COMMIT]] 5 requires. What is lost is precision, permanently, in everything derived from it.
+Keeping points in their native system also means references into
 them stay valid, which is what C-IDENTITY relies on and the reason reprojection cannot orphan an edit.
 
-(3) needs no new machinery: an explicit reprojection is position-independent, so declaring zero halo and one
-pass makes it exact under extent restriction by [[RFC-0003:C-RESOLUTION]] 2. Applying a geoid model has the
+(3)'s last bullet is what the geometric definition of halo membership costs here, and it is worth stating
+because the cost runs opposite to intuition. Membership is a point's position measured against its
+partition's bounds ([[RFC-0002:C-HALO]] 1), and a transformation changes every position while those bounds
+remain in the system they were computed in. Carrying the bounds across with the points is the obvious
+repair, and for a *reprojection* it does not work,
+for three reasons that compound. (It does work for an isometry, which is why the general duty is stated in
+[[RFC-0002:C-HALO]] 1 as keeping the volume and the positions together, and only the non-isometric case
+lands here.) A rectangle in one system is not a rectangle in another, so an axis-aligned box can only be
+carried across as the bounding box of its image — a **superset**. Adjacent partitions' supersets overlap, and
+under a geometric membership rule a point in the overlap is a core point of *both*: exactly the duplication
+[[RFC-0002:C-HALO]] 1 exists to prevent, arriving silently in every aggregate. Keeping the *exact* image
+instead does preserve disjointness, since the map is a bijection, but it is no longer a bounding volume — and
+the box model is what spatial index node keys, and therefore the fixed reduction order
+[[RFC-0003:C-COMMIT]] 3 derives from them, are built on. Third and decisively, a halo width is a
+**distance**, and a reprojection is not an isometry: scale varies across an extent, so one declared width
+maps to a range of distances and stops bounding the neighbourhood uniformly. That last one no amount of
+bounds arithmetic repairs. So the partitioning has to be established again rather than adjusted. This is a
+*re-establishment* rule and not a
+relaxation, and it is the third case in which reorganising a partitioning is legitimate rather than a defect,
+alongside a halo exchange and an adaptive repartitioning.
+
+(3) otherwise needs no new machinery: an explicit reprojection is position-independent, so declaring zero
+halo and one pass makes it exact under extent restriction by [[RFC-0003:C-RESOLUTION]] 2. Applying a geoid
+model has the
 same shape — a bounded grid summary broadcast over batches — which is why vertical conversion is folded in
 here rather than specified separately.
 

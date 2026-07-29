@@ -14,6 +14,13 @@ refs = [
 # value buffers, validity bitmap, child arrays, dictionary values. A check that compares
 # one buffer per attribute passes vacuously for a struct attribute, which has no data
 # buffers of its own, so the test asserts the transitive form or it asserts nothing.
+#
+# [[RFC-0002:C-HALO]] 6 also requires the halo attribute to be checked against the
+# geometric definition in item 1 — evaluated from the partition's bounding volume, not
+# read back off the column, which would be circular. This belongs here rather than in a
+# runtime assertion precisely because it needs the position attributes: obliging every
+# removal to evaluate it would pin those attributes into projections that read none of
+# them.
 [check]
 command = "devenv shell -- cargo test --release --test conformance_materialisation -- --nocapture"
 timeout_secs = 1800

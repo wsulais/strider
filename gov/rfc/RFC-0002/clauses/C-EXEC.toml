@@ -29,12 +29,35 @@ every partition boundary or forces the whole dataset into memory. Requirements a
    - An operator MUST NOT require its input to be re-encoded from a plain Arrow batch before use.
    - An operator MUST NOT emit output that requires Strider-specific decoding before an unrelated Arrow
      consumer can read it.
-4. A stream's spatial properties — **bounding volume**, **level of detail**, **source partition
+4. A stream's spatial properties — **partition bounds**, **level of detail**, **source partition
    identity**, and **halo width** — MUST be properties of the *stage* that produces the stream, and MUST
    NOT be fields attached to individual records or batches.
+   - **Partition bounds** are the volume the stage's partition is responsible for. They are NOT the extent
+     of the points the stage carries: halo points lie outside the bounds by construction, so a stage's
+     bounds MUST NOT be computed from the positions it holds.
+   - Bounds MUST state, for each face, whether that face is **closed** or **open**, so that membership
+     (C-HALO 1) is decidable from the bounds alone. A partitioning MUST assign closedness so that every
+     position within its extent lies within the bounds of exactly one of its partitions.
    - A planner MUST be able to determine every such property without reading point data.
-   - The sole exception is **halo membership**, which is genuinely per-point and is carried as an
-     ordinary column (C-HALO 1).
+   - **Halo membership** is not an exception, though it is carried per point. It is *derived* from those
+     bounds together with the point's own position, and the column C-HALO 1 requires caches that derivation
+     rather than introducing a property of the record.
+5. The planner MUST NOT execute an operator whose requirements, satisfied under (2), have been altered
+   since they were satisfied.
+   - A partitioning satisfying a declared spatial partitioning MUST NOT be reorganised between satisfaction
+     and execution. Establishing a partitioning *afresh* is not such a reorganisation: a halo exchange
+     (C-COMPOSITION 2), an adaptive repartitioning ([[RFC-0003:C-PARTITIONING]] 2), and the
+     re-establishment a coordinate
+     transformation requires ([[RFC-0005:C-TRANSFORM]] 3) each satisfy the requirement again rather than
+     invalidating it.
+   - Where the planner delegates part of an evaluation to an evaluator outside its control, it MUST establish
+     from that evaluator's **interface** that a partitioning handed to it cannot be reorganised — that the
+     interface can express the requirement and undertake to preserve it — and MUST reject the pipeline where
+     the interface cannot settle the question. Neither the evaluator's configuration nor its observed
+     behaviour on any particular input MUST be treated as establishing it.
+   - Where such a delegation occurs, conformance MUST be verified with that evaluator present, by the
+     comparison against a single-partition reference C-HALO 4 requires. The verification is owed by whatever
+     integrates the evaluator, and this item imposes none on a pipeline that delegates nothing.
 
 #### Rationale
 
@@ -52,4 +75,48 @@ ones Strider defines. What it may not do is require Strider code to be readable 
 
 (4) is what lets the planner reason before reading — proving a requirement already satisfied, or
 rejecting a pipeline, without touching point data. The accepted cost is that a stream is not
-self-describing in isolation: a batch handed to an external consumer carries no spatial context."""
+self-describing in isolation: a batch handed to an external consumer carries no spatial context.
+
+(5) is the obligation (2) leaves out. (2) requires a requirement to be *satisfied*; nothing required
+satisfaction to still hold when the operator ran. Measured: an analytical engine redistributed an
+already-partitioned input beneath a node of its own plan, and 74 of 110 neighbour counts were wrong against a
+whole-dataset reference. No stage failed, no declaration was violated, and every requirement had been
+satisfied at the moment it was checked. What the measurement does *not* show is that the redistribution was
+undetectable — the same evidence records that a rule placed after distribution enforcement can see such a
+node. What was absent was any signal: no error, no warning, no annotation on the plan. The obligation is
+therefore about who must look, not about what can be seen.
+
+(5)'s first bullet distinguishes reorganising from re-establishing, which is the difference between a defect
+and a design. Three arrangements the corpus requires or permits reorganise a partitioning on purpose, and
+each re-satisfies the declaration afterwards. A rule forbidding reorganisation outright would forbid them.
+
+(5)'s second bullet is the part that costs something, and it names *where* the property must be established
+because otherwise the obligation has no observable. The test is the evaluator's interface: can a caller state
+the requirement in terms the evaluator accepts, and does the evaluator undertake to keep it? For the evaluator
+measured, the answer is no — its vocabulary for describing an input distribution has three forms, none of
+which can say "the partitioning my source produced, intact" — so the question is settled negatively before any
+run. The cheaper rule would have accepted a configuration switch instead. That relocates a correctness
+property into ambient configuration, where it can be changed by someone who does not know what depends on it
+and where nothing in the pipeline records the dependency. Behaviour is excluded for the same reason from the
+other side: an evaluator that happens not to reorganise one input has established nothing about the next. The
+accepted consequence is that work carrying a spatial partitioning is not delegated to an evaluator of that
+kind, which is why an operator with a halo is not delegable.
+
+(5)'s third bullet is conditional for a reason of layering, not of leniency. The failure is invisible in
+isolation — each operator tested alone satisfies everything it declares, and the defect appears only in
+composition — so the verification has to include the evaluator. But the crates that must not depend on a
+query engine cannot host such a test, so the obligation is placed on whatever integrates the evaluator, and
+falls away entirely where nothing is delegated.
+
+(4) says **partition bounds** and defines them, where an earlier wording said "bounding volume" and left the
+choice between two volumes open. The distinction is load-bearing rather than pedantic: a halo-bearing stage's
+stream *contains* points outside the partition it is responsible for, so a volume computed from the points
+carried would enclose the halo — and membership derived from that volume would make every point a core point,
+which is the opposite of what C-HALO 1 needs. The bounds are declared by whoever assembled the partition, not
+measured from its contents.
+
+(4)'s list once carried an exception for halo membership, on the ground that it is genuinely per-point. It is
+not: membership follows from the partition bounds already listed here together with the point's own position,
+so the list is exhaustive after all and the column that records membership is a cache of a derivation. That
+matters beyond tidiness — an exception would have been a second kind of spatial property, and every clause
+reasoning over this list would have had to say whether it meant to include it."""

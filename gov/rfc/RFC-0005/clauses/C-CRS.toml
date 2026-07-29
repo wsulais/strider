@@ -16,11 +16,23 @@ host's job and libraries are limited to carrying and comparing.
    produces.
    - Where the data has a vertical reference, that MUST be carried too, distinguishably from the horizontal
      system.
+   - It MUST be carried as metadata on the coordinate **field**. Carrying it only as metadata of the batch
+     or schema as a whole MUST NOT be treated as satisfying this.
 2. A library crate MUST treat a coordinate reference system as opaque.
    - It MAY compare two for identity.
    - It MUST NOT otherwise parse, interpret, or infer from them.
 3. Absence of a declared coordinate reference system MUST be represented distinctly from a declared one, and
    MUST NOT be defaulted to any particular system.
+4. Coordinates MUST be represented in the encoding the GeoArrow specification defines, carrying the
+   coordinate reference system in that specification's vocabulary: the system under `crs`, its form
+   disambiguated by `crs_type`, and the edge interpretation under `edges`.
+   - Coordinates MUST remain individually projectable, so that an operator reading one axis does not
+     thereby materialise the others ([[RFC-0002:C-PROJECTION]] 1). Where the axes are children of a single
+     field, an operator's declared attributes MUST be able to name a child, and the projection supplied to
+     the source MUST be granular to the same depth.
+   - That specification governs the encoding only. It states nothing about what a consumer does when two
+     arrays disagree about their systems, so C-TRANSFORM 4's refusal remains Strider's obligation, and
+     conformance to the specification MUST NOT be treated as discharging it.
 
 #### Rationale
 
@@ -32,4 +44,34 @@ library's actual need, which is detecting mismatch and refusing to proceed.
 (3) exists because the convenient default is the dangerous one. LAS files frequently carry no usable
 coordinate reference system, and assuming one — the project's, the last file's, a plausible local grid —
 produces data that is confidently mislocated rather than obviously unusable. An absent system must propagate
-as absent so that any operation requiring one fails rather than guessing."""
+as absent so that any operation requiring one fails rather than guessing.
+
+(1)'s field bullet is a prohibition rather than a preference because batch-level metadata fails in the one
+direction that matters. A batch has a single slot, so an operation combining inputs that disagree keeps one
+answer and records nothing about having chosen — the result does not lose its system, it asserts one that is
+wrong for part of its content, with nothing raised. Field-level metadata keeps one system per field, so the
+disagreement remains visible and C-TRANSFORM 4's refusal is implementable. The measurement behind this, and a
+prediction it falsified, are in the accompanying architecture decision.
+
+(2)'s reasoning rests on a refusal, and the refusal is C-TRANSFORM 4's — transform explicitly or fail, never
+implicitly. An earlier draft of this clause restated it here as an item of its own, on the mistaken finding
+that nothing required it. Something did, in C-TRANSFORM, and the restatement contradicted the original by
+omitting its transformation escape: it would have required a conformant reprojection pipeline to be refused.
+The obligation is cited rather than repeated, which is the only arrangement in which the two cannot drift.
+
+(4) borrows an encoding and keeps an obligation, and the split is deliberate. What an established
+specification is good at is the part where agreement has value: the spelling of a system, the vocabulary for
+its form, the edge interpretation. What it does not do is say what a consumer must *do* about a
+disagreement — that is left unspecified, which is why (4) cannot be delegated to it and why the last bullet
+says so explicitly. Adopting an encoding is not adopting a safety property.
+
+(4) requires that specification's layout and not only its vocabulary, reversing an earlier draft which
+forbade the layout on the ground that reading one axis from a field holding the axes as children would cost
+three times the bytes. It does not; that figure was an artefact of how it was obtained. Why is argued in the
+accompanying decision, along with the reason a vocabulary is better borrowed than restated.
+
+(4)'s first bullet is what survives that correction, and it is now an obligation on *declarations* rather
+than on layout. Granularity has to remain expressible: an operator reading one axis must be able to say so,
+and the projection reaching the source must carry it to the same depth. That is a requirement on the
+vocabulary of a declaration, and it is where the earlier draft's instinct was right even though its reason
+was wrong."""

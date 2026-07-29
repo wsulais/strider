@@ -63,11 +63,20 @@ industrial scanning can be added without reshaping it.
   or summary passes that satisfy them, and refuses to run a pipeline it cannot
   satisfy. **Not a query optimiser**: it satisfies requirements, it does not
   reorder for cost. Drift toward relational algebra here is the documented failure
-  mode of `ADR-0002`.
+  mode of `ADR-0002`. Remains a *single* subject even where part of an evaluation is
+  delegated: a delegated consumer's stated requirements are an **input** to the
+  planner's computation, never a second planner. Nothing outside it satisfies a
+  Strider requirement — which is what lets satisfaction be required to *survive* to
+  execution (`RFC-0002:C-EXEC` 5), an invariant that could not be stated if the
+  satisfier varied by requirement.
 - **Pipeline** — a composed sequence of operators, plus the source it reads.
 - **Stage** — one position in a planned pipeline. A stream's spatial properties —
-  bounding volume, level of detail, source node identity, halo width — belong to
+  partition bounds, level of detail, source node identity, halo width — belong to
   the *stage*, not to the batches flowing through it (`RFC-0002:C-EXEC` 4).
+- **Partition bounds** — the volume a partition is *responsible for*, declared by whoever
+  assembled it. Deliberately not the extent of the points a stage carries: halo points lie
+  outside the bounds by construction, so bounds computed from the points held would enclose
+  the halo and make every point a core point (`RFC-0002:C-EXEC` 4).
 - **Partition** — the unit of work the planner hands an operator: a bounded region
   of space at one level of detail. Usually aligned to source nodes, not required
   to be. A *node* is what the file has; a *partition* is what the planner decided
@@ -77,10 +86,10 @@ industrial scanning can be added without reshaping it.
   height above ground.
 - **Summary** — the result of reducing an input: a minimum-elevation raster, a
   histogram, a decimated index. *Not* automatically small: whether its size is bounded
-  independently of the input is the question `RFC-0002:C-MEMORY` 1 makes an operator
+  independently of the input is the question `RFC-0002:C-SUMMARY` 1 makes an operator
   answer, and a gridded summary over a whole extent fails it. Reduce-then-apply is
   admissible out-of-core only where the summary is bounded, which for a grid means
-  built per partition (`C-MEMORY` 6).
+  built per partition (`RFC-0002:C-SUMMARY` 3).
 
 ## Neighbourhoods
 - **Halo** — points supplied to a partition from *outside* its bounds, so a
@@ -91,9 +100,18 @@ industrial scanning can be added without reshaping it.
 - **Halo width** — the distance beyond a partition's bounds from which halo points
   are drawn. Declared by the operator, supplied by the planner. Under-declaring it
   is a correctness bug, not a performance bug (`RFC-0002:C-HALO` 3).
-- **Core point** — a point belonging to the partition itself rather than its halo.
-  Operators read both and emit only core points, which is what makes a partitioned
-  run's point count equal a whole-dataset run's (`RFC-0002:C-HALO` 1).
+- **Core point** — a point whose position lies within the partition's own **bounds**,
+  rather than one drawn into its halo. Membership is *geometric*, not assigned: bounds are
+  closed below and open above on every axis — except a limit of the partitioning itself,
+  which is closed, so a point on the dataset's outer face is not lost — and the count is
+  per partitioning, so a point is core of one partition per level of detail. Operators read core and halo points
+  alike and emit only core points, which is what makes a partitioned run's point count
+  equal a whole-dataset run's (`RFC-0002:C-HALO` 1).
+- **Halo attribute** — the boolean column marking which points are halo. A **cache** of
+  the geometric definition above, not the definition itself: where the two disagree the
+  column is wrong. Kept rather than derived at each use because what partition bounds
+  cannot recover is the *ordering* — core points first — and the core count that makes
+  halo removal a range would otherwise be unfalsifiable (`RFC-0002:C-HALO` 1, 6).
 - **Pipeline halo width** — what the *planner* must borrow for a chain of
   neighbourhood operators, as distinct from the width each operator declares for
   itself. Over a single borrowed halo it is the **sum** of the declared widths, not
@@ -115,10 +133,10 @@ industrial scanning can be added without reshaping it.
   occupied grid grows with it. A whole-extent summary therefore has no declarable size and
   must be built per partition (`RFC-0002:C-SUMMARY`).
 - **Summary-mediated neighbourhood** — where a later pass reads a gridded summary an
-  earlier pass built, rather than reading points. Its halo is still a *point* halo: reach
-  in cells times the resolution, plus one cell where the grid does not divide the partition
-  extent (`RFC-0002:C-HALO` 3). Needs no second unit, which is what keeps it commensurable
-  with `C-COMPOSITION` 3's sum.
+  earlier pass built, rather than reading points. Its halo is still a *point* halo:
+  (reach + 1) times the resolution, reducible to reach times the resolution only where every
+  partition boundary *coincides* with a summary cell boundary (`RFC-0002:C-HALO` 3). Needs no
+  second unit, which is what keeps it commensurable with `C-COMPOSITION` 3's sum.
 - **Grid alignment** — every partition boundary coinciding with a summary cell boundary.
   Measured to remove the straddle term entirely, and **not** the same as the resolution
   dividing the partition extent: a grid can divide it exactly and still straddle every
@@ -184,7 +202,15 @@ industrial scanning can be added without reshaping it.
 - **Accumulation quantum** — the step to which an input value is rounded before it
   enters an associative accumulator. Declared per attribute and reported *beside the
   result value*, not only in the run's configuration, so whoever holds the number can
-  see how finely it was computed (`RFC-0003:C-COMMIT` 7).
+  see how finely it was computed (`RFC-0003:C-COMMIT` 7). Mostly not *chosen*: a source
+  storing coordinates as scaled integers has already fixed the finest step it
+  distinguishes, so for a passed-through attribute the step is a property of the input and
+  may not be declared finer. A stage that derives or requantises declares the step of what
+  it produces; nothing leaves it to configuration (`C-COMMIT` 10). Carried as metadata on
+  the field, for the same reason the CRS is — with one measured limit: where an expression
+  *consumes* a reduction's result the tag does not travel, which is arguably right, since
+  twice a total is a different quantity whose precision is not the reduction's. So a quantum
+  states something about an **unmodified** result, not blanket provenance.
   Deliberately **not** called *scale*: in fixed-point and decimal representations
   "scale" names a digit count, and reads as a claim that the stored value has been
   multiplied. Nothing in a result is scaled — the quantum is a step size in the
@@ -288,7 +314,18 @@ industrial scanning can be added without reshaping it.
 - **CRS** — a coordinate reference system, carried by every source and stage and
   **opaque** to library crates: comparable for identity, never parsed. Interpreting
   one needs a transformation database a library crate may not open
-  (`RFC-0005:C-CRS` 2).
+  (`RFC-0005:C-CRS` 2). Carried as metadata on the coordinate **fields**, not on the
+  batch: a batch has one slot, and an operation combining two systems keeps one of them
+  without saying which. An operation combining coordinates whose systems are not
+  identical is refused (`RFC-0005:C-CRS` 1, 4).
+- **Borrowed encoding** — Strider spells a CRS in GeoArrow's vocabulary (`crs`,
+  `crs_type`, `edges`) and takes those definitions from the published crate rather than
+  restating them, while keeping the *enforcement* the specification leaves unspecified:
+  it says how to write a system down, not what a consumer does when two disagree.
+  Adopting an encoding is not adopting a safety property (`RFC-0005:C-CRS` 5).
+  Coordinates stay **sibling** fields inside a pipeline so one axis can be projected
+  alone, and are composed into the conformant single-field form only where they leave
+  Strider — a composition that moves no bytes.
 - **Vertical reference** — the surface heights are measured from. Ellipsoidal and
   orthometric differ by *tens of metres*. Mismatched or absent → any
   height-above-a-surface operation **fails** (`RFC-0005:C-VERTICAL`). Absence is

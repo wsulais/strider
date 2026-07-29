@@ -25,7 +25,7 @@ different number does not do that job. Determinism is what makes the provenance 
 4. The evaluation configuration a committed run used MUST be recorded with its output.
    - The record MUST include the partition size and any other parameter affecting reduction order.
    - It MUST include the identity and version of every transformation backend consulted
-     ([[RFC-0005:C-BACKEND]] 3).
+     ([[RFC-0005:C-BACKEND]] 4).
    - It MUST include the origin and verification status of every operator evaluated
      ([[RFC-0002:C-ORIGIN]] 2).
 5. A reduction within a committed run MUST accumulate in an **associative form**, rather than in floating
@@ -55,6 +55,12 @@ different number does not do that job. Determinism is what makes the provenance 
    - A reduction MUST NOT declare its output approximate ([[RFC-0002:C-APPROX]] 1) on account of its
      quantum alone. A quantum states the resolution at which inputs were distinguished; it is not a
      divergence of the kind C-RESOLUTION 3 enumerates.
+   - The quantum MUST be carried as metadata on the field of the reduction's own result. Carrying it only as
+     metadata of the batch as a whole MUST NOT be treated as satisfying this: a quantum is per attribute, and
+     an operation combining attributes of differing quanta has one batch and several answers.
+   - Where a later operation consumes that result and produces a different quantity, the declared quantum
+     MUST NOT be presented as applying to the new quantity. Where that operation is delegated, the stage that
+     delegates it MUST either declare a quantum for the new quantity or present it without one.
 8. A committed reduction's result MUST NOT depend on the degree of parallelism, the number of threads
    available, or the partition size.
    - This binds a reduction reaching the property by either route — the fixed order of (3) or the
@@ -63,6 +69,16 @@ different number does not do that job. Determinism is what makes the provenance 
    reduction at no fewer than three distinct degrees of parallelism and no fewer than two distinct
    partition sizes, comparing every result for bitwise equality, and confirming that the measured
    departure from exact arithmetic lies within the declared bound.
+10. Every attribute over which a reduction may be accumulated under (5) MUST carry the step at which its own
+    values are represented, as metadata on its field.
+    - For an attribute a stage passes through unchanged ([[RFC-0002:C-MATERIALISATION]] 1), that step MUST be
+      the one the attribute already carries, and MUST NOT be declared finer than the step at which its source
+      represents it.
+    - A stage that derives an attribute, or that requantises one, MUST declare the step of the attribute it
+      produces. It MUST NOT be left to configuration where a source or a deriving stage already determines it.
+    - Where the values to be accumulated are produced by an expression evaluated outside Strider, their step
+      MUST be declared by the stage that delegates the expression. Reading it from the result MUST NOT be
+      relied upon.
 
 #### Rationale
 
@@ -104,16 +120,50 @@ value has been multiplied — which is the one thing (7) is not saying. Nothing 
 reported is a step size in the attribute's own unit, beside a value in that same unit. *Quantisation*
 remains the name of the process, as [[RFC-0005:C-TRANSFORM]] already uses it.
 
-(7)'s last bullet settles a question two clauses would otherwise leave open. [[RFC-0002:C-APPROX]] 1 is
-triggered by a result differing from its whole-dataset, full-resolution formulation, and a quantised total
-does differ from an unrounded one — so on a literal reading every committed reduction would owe an
-approximate declaration, while (1) simultaneously promises full resolution and C-RESOLUTION 3's taxonomy
+(7)'s bullet on approximation settles a question two clauses would otherwise leave open.
+[[RFC-0002:C-APPROX]] 1 is triggered by a result differing from its whole-dataset, full-resolution
+formulation, and a quantised total does differ from an unrounded one — so on a literal reading every
+committed reduction would owe an approximate declaration, while (1) simultaneously promises full resolution
+and C-RESOLUTION 3's enumeration of reduced evaluations
 offers no kind to name. Treating a quantum as measurement resolution rather than divergence resolves it in
 the direction that keeps both clauses meaningful: an instrument's precision does not make a measurement an
 approximation of itself.
 
 (5)'s availability is wider than it looks, which is why the obligation is not onerous: LAS and COPC store
 coordinates as scaled integers, so positional attributes almost always admit an associative form.
+
+(10) answers *where a step comes from*, and the answer is mostly that it is not chosen. The same fact that
+makes (5) widely available supplies it: a source storing coordinates as scaled integers has already fixed the
+finest step at which it distinguishes them, so for a passed-through attribute the step is a property of the
+input, not a setting. Declaring one *finer* than that is the specific error worth prohibiting, because it
+claims a resolution the data never had, and the bound (7) requires would then be truthful about the
+arithmetic and wrong about the measurement. Declaring a coarser one is permitted and sometimes forced — a
+stage that requantises produces genuinely coarser values, which is why that stage declares the new figure
+rather than inheriting the old.
+
+(10) is a separate item from (7) because it has a different subject. (7) binds a *reduction*; a stage that
+passes an attribute through, or derives one, may perform no reduction at all, so bullets about such stages
+did not belong under a head that speaks only of reductions. Reading them there left it undecidable whether a
+stage that reduces nothing owed anything.
+
+Exposing a step to configuration was the alternative and it is worse for a reason that generalises: a
+correctness-relevant quantity decidable by someone with no way to know the answer, whose failure mode is a
+bound that reads as authoritative. Making it a declaration by the party that determines the values puts it
+under (5)'s regime with everything else.
+
+Field metadata is the carrier for the reason measured for coordinate reference systems: a per-attribute fact
+stored per batch has one slot, and an operation combining two attributes with different quanta keeps one of
+them without saying which. Measured, a quantum attached to a reduction's own result field survived aliasing,
+grouping, sub-queries and joins.
+
+It did **not** survive one shape, and (7)'s last bullet is that finding rather than a hypothetical: where an
+expression consumes a reduction's result, the engine builds a fresh field and the quantum does not travel.
+That loss is arguably correct rather than a defect — twice a total is a different quantity, whose precision is
+not the reduction's — but it means the tag cannot be read as blanket provenance. It states something about an
+*unmodified* result. So the obligation is not that the tag must somehow survive; it is that a quantity derived
+from a reduction must not be presented as carrying the reduction's quantum. (10)'s last bullet is the same
+finding from the input side: where the values accumulated are themselves produced by a delegated expression,
+the step has to be declared by whoever delegated it, because the result's field will not carry one.
 
 (9) complements (6) rather than replacing it, and the two catch different implementations. A reduction that
 merges partials as they arrive is usually unstable from one run to the next, so (6) catches it. What (6)

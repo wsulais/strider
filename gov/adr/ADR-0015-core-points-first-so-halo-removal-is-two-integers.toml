@@ -19,10 +19,13 @@ never be relabelled as a core point, and the halo attribute must be absent from 
 Nothing in it says how the surviving points are produced. A throwaway prototype measured what that silence
 costs.
 
-(The wording of item 1 changed after this decision was taken — [[ADR-0016]] replaced a flat prohibition on
+(Item 1 has been rewritten twice since this decision was taken. [[ADR-0016]] replaced a flat prohibition on
 emitting halo points with the never-relabel rule described above, so that a chain of operators could carry a
-halo between them. Nothing in this decision depends on which of the two wordings is in force; both are silent
-on production.)
+halo between them; later, membership was defined *geometrically* — a point is core where its position lies
+within the partition's bounds — which demoted the boolean attribute from the definition of
+membership to a cache of it. Nothing here depends on which wording is in force: all three are silent on
+production, and the second change strengthens rather than disturbs this decision, because the ordering it
+fixes is the one part of item 1 that geometry cannot recover.)
 
 The measurement compared, for each attribute, the address of the memory backing it before and after the halo
 was removed. A changed address is proof the bytes were rewritten. Over the same eight-attribute batch:
@@ -74,9 +77,9 @@ Why an **in-batch ordering contract** rather than the alternatives:
   assembling stage to keep an order it already has.
 - **It keeps the operator's read view contiguous.** An operator reading a neighbourhood wants one view of
   core-plus-halo. Ordering delivers both that and a cheap removal from the same batch.
-- **The halo attribute survives unchanged.** Halo membership remains an ordinary column, so an external
-  Arrow consumer reads it without knowing anything about Strider ([[RFC-0002:C-EXEC]] 3) while Strider reads
-  the same fact as a point count.
+- **The halo attribute survives unchanged.** Membership itself is geometric rather than a property of the
+  column, but the column that caches it stays an ordinary one, so an external Arrow consumer reads it without
+  knowing anything about Strider ([[RFC-0002:C-EXEC]] 3) while Strider reads the same fact as a point count.
 
 Why the ordering is **verified rather than assumed** ([[RFC-0002:C-HALO]] 5): a plain Arrow batch cannot
 express row order in its schema, which is the price of [[RFC-0002:C-EXEC]] 3's no-envelope rule. So the contract is
@@ -148,7 +151,7 @@ reinstating a select-based removal is additive and local, and costs throughput r
 text = "Order core points before halo points within a batch, and remove a halo by reducing the batch to that range"
 status = "accepted"
 pros = [
-    "Measured: 7 of 7 attributes kept their backing memory across the removal, against 0 of 8 for the select-based route",
+    "Measured: 7 of 7 attributes kept their backing memory across a removal that also drops the halo column, and 8 of 8 across the slice alone, against 0 of 8 for the select-based route",
     "Free at the point of construction, since a partition's own points are known before any neighbour is borrowed",
     "The operator still sees one contiguous view of core-plus-halo, so the read path costs nothing either",
     "The halo attribute stays an ordinary column, so [[RFC-0002:C-EXEC]] 3's no-envelope interoperability is untouched",
@@ -186,7 +189,6 @@ pros = [
 ]
 cons = [
     "An operator reading a neighbourhood needs core and halo together, so it must either handle two batches throughout or concatenate them — and concatenation is exactly the rewrite being avoided, moved one stage earlier",
-    "Halo membership becomes constant within a batch, which sits awkwardly with [[RFC-0002:C-HALO]] 1's requirement that it be a per-point attribute",
     "Pushes the awkwardness onto every neighbourhood operator, which is the code most likely to be written by someone other than the planner's author",
 ]
-rejection_reason = "It optimises the removal at the expense of the read, and the read is the common case: every neighbourhood operator needs core and halo in one view, so each would either concatenate — paying the copy this decision exists to avoid — or carry two-batch handling in its inner loop. Recorded as the option to revisit if operators turn out to tolerate a two-batch input, because on removal cost alone it wins."
+rejection_reason = "It optimises the removal at the expense of the read, and the read is the common case: every neighbourhood operator needs core and halo in one view, so each would either concatenate — paying the copy this decision exists to avoid — or carry two-batch handling in its inner loop. Recorded as the option to revisit if operators turn out to tolerate a two-batch input, because on removal cost alone it wins. One of its three recorded objections has since been withdrawn: it was listed as sitting awkwardly with a per-point halo attribute, which held while that attribute was the definition of membership. Membership is now geometric and the attribute a cache of it, so a column constant within a batch is an ordinary cache rather than an anomaly, and only the read-path objections remain."
