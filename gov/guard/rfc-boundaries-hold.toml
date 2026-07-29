@@ -1,0 +1,26 @@
+#:schema ../schema/guard.schema.json
+
+[govctl]
+id = "GUARD-RFC-BOUNDARIES-HOLD"
+title = "RFC boundaries hold"
+refs = ["RFC-0001"]
+
+# Exists because the measurement behind it was nearly lost. Closing the plan-encoding
+# question added roughly eleven cross-RFC citations and almost no intra-RFC ones, which
+# took the corpus from 1.13 to 1.03 — onto the smell threshold rather than through it.
+# Candidate seams were then measured: moving C-PLAN into RFC-0002 was the only one that
+# raised cohesion on both sides (total 1.03 -> 1.29, RFC-0002 2.13 -> 2.59, RFC-0007
+# 0.21 -> 0.27), and it was NOT taken. C-PLAN cites RFC-0002 eleven times because an
+# obligation to record every declared parameter's effective value must cite the clauses
+# that declare them; that is dependency, and this metric cannot tell dependency from
+# misfiling. RFC-0002 is "The operator contract", and "the form authors write" is a worse
+# subject fit than a 0.06 coupling gain is worth.
+#
+# What is left open, and what this guard is the tripwire for: RFC-0007 sits at 0.21, and
+# dissolving it entirely scored best on total (1.46) while failing the both-sides test only
+# because the group ceases to exist — which is arguably what "not a subject" means. Its
+# title is an "and". If the total ever falls through 1.00, that question is the first place
+# to look, and the numbers above are the baseline to compare against.
+[check]
+command = "python3 gov/guard/scripts/check-rfc-boundaries.py"
+timeout_secs = 120

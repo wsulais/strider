@@ -1,0 +1,26 @@
+# The document model: what the user edited, and what a renderer may read of it.
+#
+# Separate from the editor so that a second front end shares it rather than reimplements it —
+# the platform suffix on `strider-editor-qt` only means something if what sits below it is
+# platform-free. Permissive, so an AGPL editor is not the only thing that can consume it.
+[package]
+name = "strider-doc"
+version = "0.0.0"
+publish = false
+edition.workspace = true
+rust-version.workspace = true
+# Library crate — permissive per [[RFC-0001:C-LICENSE]] (1).
+license.workspace = true
+repository.workspace = true
+description = "The document, its edits, and the metadata-only extract a renderer reads"
+
+[dependencies]
+# The renderer's vocabulary: what an extract must produce for `advance` to consume.
+strider-view = { path = "../strider-view" }
+# Exercised as a consumer would, through the facade rather than the adapter.
+strider-io = { path = "../strider-io" }
+# The representation at every operator boundary ([[RFC-0002:C-EXEC]] 3).
+arrow = { version = "58", default-features = false }
+
+[lints]
+workspace = true

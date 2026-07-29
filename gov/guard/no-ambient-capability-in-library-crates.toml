@@ -9,5 +9,5 @@ refs = [
 ]
 
 [check]
-command = "devenv shell -- cargo clippy --workspace --exclude strider-app --all-targets --all-features -- -D warnings"
+command = "devenv shell -- cargo clippy --workspace --exclude strider-editor-qt --all-targets --all-features -- -D warnings"
 timeout_secs = 900

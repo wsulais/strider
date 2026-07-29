@@ -1,0 +1,20 @@
+#:schema ../schema/guard.schema.json
+
+[govctl]
+id = "GUARD-OUTPUT-READABLE-BY-AN-EXTERNAL-ENGINE"
+title = "output readable by an external engine"
+refs = ["RFC-0002:C-EXEC", "RFC-0002:C-HALO", "RFC-0002:C-APPROX"]
+
+# [[RFC-0002:C-EXEC]] 3's export bullets. Deliberately NOT a reimplementation: the engine has
+# to share no code with this project, because a stand-in written here would carry the same
+# assumptions the test exists to expose. It must read an exported result, reproduce an
+# aggregate over it, and see the halo and approximation columns C-HALO 1 and C-APPROX 1
+# require — a consumer that cannot see halo rows over-counts silently, which is the failure
+# the whole layering is arranged to prevent.
+#
+# HELD OUT of default_guards on the same footing as the other conformance guards: there is no
+# operator yet to produce a result to export. The first work item that lands one MUST move
+# this in.
+[check]
+command = "devenv shell -- cargo test --release --test conformance_export -- --ignored --nocapture"
+timeout_secs = 1800

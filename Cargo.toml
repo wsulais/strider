@@ -11,11 +11,16 @@ members = [
     "crates/strider-io/copc",
     # "crates/strider-algo",
     "crates/strider-view",
-    "crates/strider-view/core",
     "crates/strider-view/wgpu",
+    # The document model, below any front end so a second one can share it.
+    "crates/strider-doc",
     # Application — AGPL-3.0-or-later ([[RFC-0001:C-LICENSE]] 2). Declares its own
     # `license` rather than inheriting from [workspace.package].
-    # "crates/strider-app",
+    #
+    # Named for its platform. A second front end is `strider-editor-web`, a sibling rather than
+    # a rewrite, which is only credible because everything below it — `strider-view`,
+    # `strider-doc` — is toolkit-free and permissive.
+    "crates/strider-editor-qt",
 ]
 
 [workspace.package]
