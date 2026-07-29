@@ -21,16 +21,16 @@
 //!   ([[RFC-0006:C-OVERLAY]] 1 and 2). The QML panel sits beside the viewport; anchors are
 //!   drawn by the renderer and depth-tested against the cloud in hardware.
 //!
-//! Everything below `render-gpu` is byte-identical to what the terminal shell drives, which
+//! Everything below `strider-view-wgpu` is byte-identical to what the terminal shell drives, which
 //! is the point: two hosts, one renderer, and the renderer cannot tell them apart.
 
 use std::cell::RefCell;
 use std::pin::Pin;
 
-use host_sim::doc::Edit;
-use host_sim::host::Host;
-use render_core::{EditAction, Lod, PartitionId, HIDE, RECLASS};
-use render_gpu::{AnchorPoint, Gpu, Orbit, Shading};
+use strider_doc::doc::Edit;
+use crate::host::Host;
+use strider_view::{EditAction, Lod, PartitionId, HIDE, RECLASS};
+use strider_view_wgpu::{AnchorPoint, Gpu, Orbit, Shading};
 
 // Device sharing, one module per backend, chosen by the target and not by a flag.
 //
@@ -226,12 +226,12 @@ struct State {
     gpu: Option<Gpu>,
     /// The two offscreen targets, and the size they were built for. See `render_current` for
     /// why there are two.
-    offscreen: Option<([render_gpu::Offscreen; 2], u32, u32)>,
+    offscreen: Option<([strider_view_wgpu::Offscreen; 2], u32, u32)>,
     /// Which of the two the next frame draws into.
     parity: usize,
     /// Target pairs a resize replaced, held for a few renders before being dropped. See the
     /// comment where they are pushed: on the shared path Qt may still be sampling them.
-    retired: Vec<(u8, [render_gpu::Offscreen; 2])>,
+    retired: Vec<(u8, [strider_view_wgpu::Offscreen; 2])>,
     /// GPU buffers by `(partition, level)`, and whether they were built from a mask.
     resident: std::collections::BTreeMap<(u32, u8), (u64, bool)>,
     frames: u64,
@@ -285,7 +285,7 @@ enum ChannelChoice {
     #[default]
     SourceRgb,
     Classification,
-    /// An index into the host's channels — see `host_sim::doc::CHANNEL_LABELS`.
+    /// An index into the host's channels — see `strider_doc::doc::CHANNEL_LABELS`.
     Channel(u32),
 }
 
@@ -315,7 +315,7 @@ impl ChannelChoice {
 
     fn labels() -> Vec<String> {
         let mut v = vec!["source RGB".to_string(), "classification".to_string()];
-        v.extend(host_sim::doc::CHANNEL_LABELS.iter().map(|s| s.to_string()));
+        v.extend(strider_doc::doc::CHANNEL_LABELS.iter().map(|s| s.to_string()));
         v
     }
 }
@@ -1096,9 +1096,9 @@ fn resolve(host: &Host, channel: ChannelChoice, ramp: usize) -> (String, Shading
             },
         ),
         ChannelChoice::Channel(c) => {
-            let i = (c as usize).min(render_core::CHANNELS - 1);
+            let i = (c as usize).min(strider_view::CHANNELS - 1);
             (
-                host_sim::doc::CHANNEL_LABELS[i].to_string(),
+                strider_doc::doc::CHANNEL_LABELS[i].to_string(),
                 Shading::Ramped {
                     channel: i as u32,
                     // Host-supplied and stable — see `RampStats`. A range observed from the
@@ -1153,13 +1153,13 @@ fn run_frame() -> Vec<String> {
             let Some(token) = host.renderer.token_of(d.id, d.lod) else {
                 continue;
             };
-            let verts = render_core::Uploads::vertices(&host.store, token);
+            let verts = strider_view::Uploads::vertices(&host.store, token);
             let flags = host.renderer.mask_flags(d.id, d.lod);
             let mut masked = Vec::with_capacity(verts.len());
             for (i, v) in verts.iter().enumerate() {
                 match flags.and_then(|f| f.get(i).copied()) {
                     Some(HIDE) => continue,
-                    Some(x) if x >= RECLASS => masked.push(render_core::Vertex {
+                    Some(x) if x >= RECLASS => masked.push(strider_view::Vertex {
                         class: x - RECLASS,
                         ..*v
                     }),

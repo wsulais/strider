@@ -36,6 +36,7 @@ fn main() {
         "src/viewport.h",
         "src/viewport_platform.h",
         "src/viewport_vulkan.cpp",
+        "src/viewport_vulkan.h",
         "src/viewport_mac.mm",
         "src/viewport_mac.h",
         "qml/Main.qml",

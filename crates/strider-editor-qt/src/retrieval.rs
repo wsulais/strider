@@ -142,7 +142,7 @@ impl Retrieval {
             let verts = Self::read_blocking(&path, node.chunk.offset, node.chunk.len)
                 .ok()
                 .and_then(|bytes| decoder.decode(&node, &bytes).ok())
-                .map(|batch| crate::doc::to_vertices(&batch, origin))
+                .map(|batch| strider_doc::doc::to_vertices(&batch, origin))
                 .unwrap_or_default();
             let _ = tx.send(Completed {
                 req,

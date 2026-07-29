@@ -17,7 +17,7 @@
 //! between two targets, and still blocks on the queue before publishing, for the same reason it
 //! does on Vulkan — Qt is given a handle, not a promise.
 
-use render_gpu::{Gpu, Offscreen};
+use strider_view_wgpu::{Gpu, Offscreen};
 
 /// Nothing forced. Which loops a platform and an RHI backend support is Qt's judgement and it
 /// differs by both; on macOS Qt picks the threaded loop by itself — every crash report from this

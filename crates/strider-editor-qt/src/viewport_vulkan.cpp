@@ -13,6 +13,7 @@
 #include <QtQuick/qsgtexture_platform.h>
 
 #include "viewport_platform.h"
+#include "viewport_vulkan.h"
 
 namespace {
 

@@ -12,7 +12,7 @@
 //! not the one Qt chose, or a Qt built without Vulkan, keeps the readback path, which is the
 //! path most machines are on.
 
-use render_gpu::{Gpu, Offscreen};
+use strider_view_wgpu::{Gpu, Offscreen};
 
 /// Qt's threaded render loop, which this platform measured as worth forcing: `basic`
 /// serialises host extract with Qt's own rendering and cost about half the frame rate.
@@ -39,7 +39,7 @@ unsafe extern "C" {
 
 /// Offer Qt the instance and device the renderer created.
 ///
-/// The direction is deliberate and is argued in `render_gpu::vulkan`: adopting Qt's device would
+/// The direction is deliberate and is argued in `strider_view_wgpu::vulkan`: adopting Qt's device would
 /// mean telling wgpu-hal which extensions that device was created with, and Qt publishes
 /// neither — a superset is undefined behaviour rather than a diagnosable error.
 pub fn offer_device(gpu: &Gpu) -> bool {

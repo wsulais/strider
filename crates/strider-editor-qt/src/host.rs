@@ -12,9 +12,9 @@ use strider_view::{
 use strider_io::copc::{Open, Source};
 use strider_io::{Delivered, Step};
 
-use crate::doc::{node_id, Camera, Document, Edit};
+use strider_doc::doc::{node_id, Camera, Document, Edit};
 use crate::retrieval::Retrieval;
-use crate::store::Store;
+use strider_doc::store::Store;
 
 pub struct Host {
     pub path: String,
@@ -42,7 +42,7 @@ pub struct Host {
     pub open_rounds: usize,
     pub open_bytes: u64,
     /// Ramp ranges, established once at open and stable thereafter. See `RampStats`.
-    pub ramp: crate::doc::RampStats,
+    pub ramp: strider_doc::doc::RampStats,
 }
 
 impl Host {
@@ -114,12 +114,12 @@ impl Host {
             .and_then(|node| {
                 let bytes = Retrieval::read_blocking(path, node.chunk.offset, node.chunk.len).ok()?;
                 let batch = source.decode(&node, &bytes).ok()?;
-                Some(crate::doc::RampStats::from_sample(
-                    &crate::doc::to_vertices(&batch, origin),
+                Some(strider_doc::doc::RampStats::from_sample(
+                    &strider_doc::doc::to_vertices(&batch, origin),
                     "COPC root node, a decimated sample of the whole cloud",
                 ))
             })
-            .unwrap_or(crate::doc::RampStats {
+            .unwrap_or(strider_doc::doc::RampStats {
                 channels: [(0.0, 1.0); strider_view::CHANNELS],
                 source_has_colour: false,
                 provenance: "unavailable",
