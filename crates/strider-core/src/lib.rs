@@ -25,7 +25,11 @@
 //!   is a cache of that derivation ([[RFC-0002:C-HALO]] 1, [[RFC-0002:C-EXEC]] 4).
 
 pub mod geom;
+// What an operator declares before it runs ([[RFC-0002:C-EXEC]] 1, [[RFC-0002:C-PORT]]).
+// A port like the others here: the model's, not any one operator's.
+pub mod op;
 pub mod retrieval;
 
 pub use geom::Aabb;
+pub use op::{Declaration, Halo, Operator, Port, TypeArg, TypeExpr, HALO_ATTRIBUTE};
 pub use retrieval::{Delivered, Need, Range, Step};

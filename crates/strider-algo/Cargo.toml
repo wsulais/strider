@@ -1,0 +1,23 @@
+# Operators: the things that compute over points and declare what they need first.
+#
+# Beneath the renderer and beside the IO adapters, and permissively licensed like both — an
+# operator is the kind of thing another tool should be able to take. The toolkit and query-engine
+# guards walk this crate by name.
+[package]
+name = "strider-algo"
+version = "0.0.0"
+publish = false
+edition.workspace = true
+rust-version.workspace = true
+# Library crate — permissive per [[RFC-0001:C-LICENSE]] (1).
+license.workspace = true
+repository.workspace = true
+description = "Operators over point clouds, with declared halo requirements"
+
+[dependencies]
+# The declaration port. What an operator owes a planner is the model's, not this crate's
+# ([[RFC-0002:C-EXEC]] 1) — the same reason the retrieval port lives there.
+strider-core = { path = "../strider-core" }
+
+[lints]
+workspace = true

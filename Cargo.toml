@@ -9,7 +9,7 @@ members = [
     # once a member path-depends on it), so the hierarchy is expressed by paths and names.
     "crates/strider-io",
     "crates/strider-io/copc",
-    # "crates/strider-algo",
+    "crates/strider-algo",
     "crates/strider-view",
     "crates/strider-view/wgpu",
     # The document model, below any front end so a second one can share it.
