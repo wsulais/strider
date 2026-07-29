@@ -1,0 +1,42 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-ORIGIN"
+title = "Operator origin and verification"
+kind = "normative"
+status = "active"
+
+[content]
+text = """
+Because a consumer may implement operators against the published interfaces, output may be produced by an
+operator whose conformance nobody has checked. The contracts such an operator could break all fail silently,
+so the fact must travel with the result.
+
+1. Every registered operator MUST declare its origin, and whether its conformance has been verified in the
+   sense defined by C-VERIFIED 1.
+   - Verification status MUST NOT be asserted by the operator's own author.
+2. A committed run MUST record the origin and verification status of every operator it evaluated, as part of
+   the evaluation configuration [[RFC-0003:C-COMMIT]] 4 requires.
+3. Output produced by an operator whose conformance is unverified MUST be surfaced to the user in the same
+   manner as approximate output under C-APPROX 3.
+
+#### Rationale
+
+(1) depends on C-VERIFIED for its meaning rather than defining verification here, because
+what must be verified is a property of the *operator contract* — halo sufficiency, memory ceiling, attribute
+completeness, reduction order, approximation honesty — and those obligations live in this RFC. A field
+with no defined truth condition would not be testable, and defining it twice would let the definitions drift.
+
+The nested prohibition exists because self-assertion would make the field decorative. An author confident
+enough to publish an operator is confident enough to mark it verified, and the marker is only worth carrying
+if it records independent confirmation.
+
+(2) costs nothing: an evaluation configuration is already recorded for every committed run, so operator origin
+is an addition to an existing record. It is what lets a forester defending a number say which operators
+produced it and whether they were checked.
+
+(3) is the substantive choice, and recording alone was the alternative. Recording alone means the user
+discovers the provenance of a number after it is already in a report, with the decision already taken on it.
+This is the same reasoning as C-APPROX 3 — a wrong number is indistinguishable from a right one,
+so the signal has to arrive before the number is used. "Computed by an operator nobody verified" belongs in
+the same category as "computed approximately"."""

@@ -1,0 +1,36 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-EXTRACT"
+title = "Document authority and the render boundary"
+kind = "normative"
+status = "active"
+
+[content]
+text = """
+The renderer must show an edit the instant it is made, yet [[RFC-0006:C-RENDER]] 1 forbids the render path
+from traversing the operator planner. Both hold if the renderer consumes a *derived snapshot* rather than the
+document itself, refreshed at one defined synchronisation point.
+
+1. The document graph is the sole authority for what the data is.
+   - Any render-side representation MUST be derived from it, and MUST NOT be authoritative for any purpose.
+2. Data MUST flow from document to render state in one direction only.
+   - A render-side representation MUST NOT write back to the document graph.
+3. There MUST be exactly one synchronisation point — the **extract** — at which the document graph and render
+   state are both accessed.
+   - The render path MUST NOT traverse the document graph outside it.
+4. Extract MUST operate on metadata alone: which partitions are visible, and which edits apply to each.
+   - It MUST NOT read point data.
+   - It MUST NOT perform retrieval, and MUST NOT await it.
+
+#### Rationale
+
+(1) and (2) are what stop the renderer's compromises becoming the document's. The render path works at a
+reduced level of detail by design; if that representation could write back, a camera position would be able
+to change results. One-way flow makes that structurally impossible rather than merely discouraged.
+
+(4) is the requirement most easily lost, and losing it stalls every frame. Where a system's authoritative
+state is resident in memory, extraction copies values cheaply. Here the point data is not resident, so
+extract must copy *plans* — partition references and edit sets — with the points arriving asynchronously
+afterwards. An extract that awaited retrieval would put I/O inside the synchronisation point, which is the
+one place nothing may block."""

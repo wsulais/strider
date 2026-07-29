@@ -1,0 +1,27 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-OVERVIEW"
+title = "Overview and scope"
+kind = "informative"
+status = "active"
+
+[content]
+text = """
+This document is the front door: what Strider is, why it exists, who may use it, and what a release of it is
+entitled to claim. The technical contracts live in the six RFCs that follow.
+
+**Scope** — who may use Strider and on what terms, including contribution; and what a release must verify
+before asserting a property of itself.
+
+**Out of scope** — every technical obligation. The operator contract is [[RFC-0002]]; evaluation guarantees
+[[RFC-0003]]; environment capabilities and caching [[RFC-0004]]; coordinates and point references
+[[RFC-0005]]; rendering [[RFC-0006]]; editing [[RFC-0007]]. Also out of scope: trademark policy, packaging,
+release process, and which milestone ships what — a plan rather than an obligation.
+
+Licensing and conformance are grouped here because both are policy a reader needs before trusting anything
+the software says. Licensing decides who may build on this; conformance decides what the project may assert.
+Both also fail in the same way — invisibly, until it is expensive. A copyleft dependency beneath a permissive
+crate makes that crate's declared licence false while everything still builds; bounded memory, halo
+correctness and reproducibility each hold on every dataset a developer has to hand and fail in production. So
+both are written as checks rather than intentions."""

@@ -1,0 +1,52 @@
+[workspace]
+resolver = "3"
+members = [
+    # Library crates — Apache-2.0 OR MIT ([[RFC-0001:C-LICENSE]] 1).
+    "crates/strider-core",
+    # "crates/strider-io",
+    # "crates/strider-algo",
+    # "crates/strider-view",
+    # Application — AGPL-3.0-or-later ([[RFC-0001:C-LICENSE]] 2). Declares its own
+    # `license` rather than inheriting from [workspace.package].
+    # "crates/strider-app",
+]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.85"
+# Default for LIBRARY crates ([[RFC-0001:C-LICENSE]] 1). The dual expression is
+# load-bearing: Apache-2.0 alone is incompatible with GPL-2.0-only, so MIT is the
+# escape hatch for such consumers; Apache stays in the pair for its patent grant.
+# strider-app overrides this with AGPL-3.0-or-later.
+license = "Apache-2.0 OR MIT"
+repository = "https://github.com/waelwindows/strider"
+
+[workspace.dependencies]
+# Arrow is the interchange representation at every operator boundary
+# ([[RFC-0002:C-EXEC]] 3) — plain RecordBatch, no Strider envelope, so batches stay
+# directly consumable through the Arrow C data interface, Flight, and Parquet.
+arrow = { version = "56", default-features = false }
+
+# Typed, per-crate error enums: recoverable retrieval/storage/parse failures are
+# returned as Result, never panicked. Library crates must not assume a host that
+# can absorb a panic ([[RFC-0004:C-HOST]]).
+thiserror = "2"
+
+# NOTE — deliberate absences, each enforced by a guard rather than by memory:
+#   * No DataFusion, or any general-purpose SQL query engine, anywhere beneath the
+#     spatial access, operator, or rendering crates ([[RFC-0006:C-LAYERING]] 1).
+#     GUARD-NO-QUERY-ENGINE checks the resolved graph.
+#   * No tokio, rayon, or std::fs in library crates: storage, byte retrieval, and
+#     parallelism are supplied by the caller ([[RFC-0004:C-HOST]]), and
+#     GUARD-PORTABILITY-TARGET compiles them for wasm32-unknown-unknown to prove it.
+#   * No copyleft dependency under any library crate ([[RFC-0001:C-LICENSE]] 4) —
+#     it would silently make the declared licence false. GUARD-LICENSE-COMPAT
+#     checks this on every dependency change.
+
+# Ambient-capability enforcement for LIBRARY crates ([[RFC-0004:C-HOST]]). The paths
+# themselves are listed in clippy.toml, which explains why the wasm32 build gate is
+# not sufficient on its own. strider-app opts out — it is the host, so using the
+# filesystem and spawning threads is its job.
+[workspace.lints.clippy]
+disallowed_types = "deny"
+disallowed_methods = "deny"

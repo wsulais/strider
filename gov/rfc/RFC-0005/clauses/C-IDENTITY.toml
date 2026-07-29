@@ -1,0 +1,43 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-IDENTITY"
+title = "Point references"
+kind = "normative"
+status = "active"
+
+[content]
+text = """
+A point reference is a **position in a versioned container**, not a minted identifier. This is free, requires
+no sidecar store, and is what both comparable tools use. What makes it safe is not making it durable but
+restricting where it may be used.
+
+1. A point reference MUST be the composite of:
+   - the source identifier;
+   - the source's version fingerprint (C-BINDING);
+   - the source's spatial index node key;
+   - the point's index within that node.
+2. A point reference is valid only for the source version it names.
+   - It MUST NOT be interpreted against a different version.
+   - It MUST NOT be automatically migrated to one.
+3. A point-set edit ([[RFC-0007:C-EDIT]] 3) MUST attach directly to a source, and MUST NOT appear downstream
+   of any operator.
+   - A region edit ([[RFC-0007:C-EDIT]] 2) MAY appear at any position in the document graph.
+   - Operators that change cardinality — decimation, voxelisation, filtering, or any reduction — produce
+     points that no node key and index address.
+4. A per-point identifier MUST NOT be persisted for the general point population.
+
+#### Rationale
+
+(3) is the substantive restriction, and it replaces a problem that first appeared to be about reprojection.
+Because [[RFC-0007:C-EDIT]] 5 makes sources read-only and reprojection is an output concern rather than a
+document mutation, reprojection cannot orphan a reference. The real hazard is graph position: an enumerated
+reference taken downstream of a cardinality-changing operator is invalidated by a parameter change the user
+has every reason to make. Attaching point-set edits to sources only removes that whole class of failure, and
+costs little because the enumerated form is the rare escape hatch rather than the default.
+
+(4) forbids the approach that looks most robust and does not scale. A minted identifier per point, persisted
+alongside the data, would survive everything — and would require roughly sixteen gigabytes of sidecar for a
+billion-point dataset, against a design premise of never materialising the dataset itself. It is phrased as a
+prohibition on *persisting* rather than on computing, because an ephemeral internal handle within one
+evaluation breaks nothing."""

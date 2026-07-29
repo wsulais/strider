@@ -1,0 +1,31 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-OVERVIEW"
+title = "Overview and scope"
+kind = "informative"
+status = "active"
+
+[content]
+text = """
+A library crate reaches for nothing. Storage, byte retrieval and parallelism arrive from whoever is
+hosting it, and everything derived from them — caches, spilled working sets, consolidated overlays —
+inherits the same discipline. Two consequences follow that would otherwise be separate subjects: the
+same code runs in a desktop process and in a browser, and a cache cannot acquire authority it was never
+given.
+
+**Scope** — how library crates obtain environment capabilities rather than assuming them; the
+prohibition on blocking; the checks that keep that honest; and how derived artefacts are layered, keyed
+and integrity-checked.
+
+**Out of scope** — a browser or server deployment, neither of which is being built. Rendering backends
+([[RFC-0006:C-SURFACE]]). Cache eviction policy, sizing and placement heuristics. The concrete storage
+and retrieval implementations, which are the host's.
+
+Two points deserve stating because both are easy to lose. First, the distinction between an aspiration
+and an obligation: intending to stay portable does not survive a deadline, so C-PORT-GATE makes it a
+check that fails. Second, this RFC introduces **no virtual filesystem** — paths, directory traversal,
+seekable handles and permissions are all more privilege than any of this needs. A keyed store with no
+paths has no path traversal to defend against, and a write-once store has no in-place modification to
+race. That narrowness is the security property, and widening these interfaces toward a general
+filesystem would forfeit it."""

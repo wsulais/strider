@@ -1,0 +1,51 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-MEMORY"
+title = "Bounded memory and admissible operators"
+kind = "normative"
+status = "active"
+
+[content]
+text = """
+Bounded memory is the whole of Strider's differentiation from tools that treat a point cloud as an
+in-memory object. A guarantee holding for *some* operators is not one a user can rely on when assembling
+a pipeline, so the bound is a property of the operator set, enforced by excluding operators that cannot
+meet it.
+
+1. Every registered operator MUST execute within a peak memory ceiling determined only by its configured
+   partition size, its declared halo width (C-EXEC 1), and the declared size of any summary it builds.
+   - That ceiling MUST NOT be a function of the dataset's total point count.
+2. An operator whose formulation requires simultaneous access to the entire dataset, or an unbounded
+   number of passes over it, MUST NOT be registered as a built-in operator.
+   - This excludes iterative pairwise registration, global surface reconstruction, and whole-cloud
+     relaxation methods **in their published whole-dataset forms**.
+   - A partition-wise reformulation with a declared halo is admissible under (1), and MUST then disclose
+     its divergence under C-APPROX 1.
+3. An operator that does not satisfy (1) MUST NOT be reachable without the caller having distinguished it
+   from a bounded operator first.
+   - Such an operator MUST report its own memory ceiling.
+4. Spill to persistent storage is a permitted strategy for satisfying (1), and MUST be obtained through
+   the host storage interface ([[RFC-0004:C-HOST]] 1) rather than from the filesystem directly.
+5. Conformance to (1) MUST be verified by processing inputs of at least two sizes differing by at least an
+   order of magnitude, the larger exceeding available memory, and demonstrating that peak memory does not
+   scale with input size.
+
+#### Rationale
+
+Stating the ceiling as a function of declared quantities rather than a fixed byte figure keeps (1)
+testable while letting an operator be configured for the machine it runs on: the test is that peak memory
+stays flat as input grows, not that it stays under a particular number.
+
+(3) is written conditionally on purpose. No operator failing (1) is currently admitted, so the item states
+the conditions any future admission would have to meet rather than describing something that exists — which
+keeps it an obligation on the system rather than a note about the specification's future.
+
+The exclusion in (2) is drawn at the start deliberately. Admitting one unbounded operator because it is
+valuable converts bounded memory from a property of the system into a property of a subset, and there is
+no later point at which that line is easier to hold.
+
+(5) is a gate rather than a note, and *two* sizes rather than one is the operative detail. A single large
+run proves only that memory was not exhausted on that occasion; comparing two distinguishes a bounded
+working set from a fortunate one. An order of magnitude is specified because "substantially different" is
+a judgement, and this needs to be a check."""

@@ -1,0 +1,10 @@
+#:schema ../schema/guard.schema.json
+
+[govctl]
+id = "GUARD-CITATION-ANCHORS-RESOLVE"
+title = "citation anchors resolve"
+refs = ["RFC-0001"]
+
+[check]
+command = "python3 gov/guard/scripts/check-citations.py"
+timeout_secs = 120

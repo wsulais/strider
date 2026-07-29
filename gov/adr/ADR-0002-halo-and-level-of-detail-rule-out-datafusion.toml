@@ -1,0 +1,157 @@
+#:schema ../schema/adr.schema.json
+
+[govctl]
+id = "ADR-0002"
+title = "Halo and level of detail rule out DataFusion"
+status = "accepted"
+date = "2026-07-29"
+refs = [
+    "ADR-0001",
+    "RFC-0006:C-LAYERING",
+    "RFC-0006:C-RENDER",
+]
+
+[content]
+context = """
+Once ADR-0001 settled that operators declare requirements and a planner satisfies them, the obvious
+question followed: DataFusion already *is* that engine. It has a physical-plan interface with a
+declarative requirements surface, an optimiser that inserts satisfying operators, a memory pool with
+spill-to-disk, two-phase aggregation, Parquet integration, and a table-provider extension point whose
+filter pushdown maps almost exactly onto COPC octree pruning. Reusing it would supply most of the lazy
+dataflow engine the design calls for, plus a SQL surface and Python interoperability, at close to no
+authoring cost.
+
+Assessment found most point cloud operations to be ordinary special cases of the tabular model.
+Cropping to an area of interest is filter pushdown into a scan, and octree node pruning is
+structurally the same mechanism as Parquet row-group pruning. Voxelisation and decimation are grouped
+aggregation on quantised coordinates. Canopy height models, minimum-elevation rasters and the first
+pass of morphological ground filters are all grouped aggregation on a cell identifier. Height above
+ground and the second pass are a broadcast join against a small summary. Joins to cadastral or
+inventory tables are the native case.
+
+Two capabilities are genuinely absent.
+
+**Halo requires overlapping partitions.** DataFusion's distribution vocabulary is exhaustively
+disjoint — unspecified, single-partition, hash-partitioned — and its optimiser depends on that
+disjointness for correctness: partial-then-final aggregation is valid precisely because no row appears
+in two partitions. Introducing overlap without the optimiser knowing would make aggregates silently
+over-count. The nearest existing construct is a windowed aggregate with a preceding-and-following row
+frame, which is a one-dimensional halo over a totally ordered stream; three-dimensional neighbourhoods
+admit no such total order.
+
+**Level of detail is unmodelled.** DataFusion is exact: a scan returns every matching row. There is no
+vocabulary for requesting enough points to fill a viewport, and no mechanism for propagating "this
+result is approximate at resolution k" up the plan tree. An aggregate computed at a reduced level of
+detail is a different answer, not merely less data — and that distinction is central to this product.
+
+A third, softer gap: coordinate reference systems can be carried in Arrow field metadata, but nothing
+would prevent a join between mismatched projections.
+
+Against reuse stood three operational costs. DataFusion ships breaking releases every one to two
+months and its physical-plan trait has churned repeatedly, so custom physical operators mean absorbing
+that churn permanently in the components whose own traits are least settled. The dependency mass —
+engine, Arrow, Parquet, SQL parser — is substantial for a desktop application. And the latency profile
+is wrong for rendering: the engine is built for batch throughput, while a viewport needs cancellable
+requests inside a frame budget and must not wait on a query planner while the camera moves."""
+decision = """
+DataFusion is positioned beside the engine, never beneath it, and deferred past the first release. The
+obligations are written in [[RFC-0006:C-LAYERING]] and [[RFC-0006:C-RENDER]]; this ADR records only
+*why*.
+
+Why **adjacent** rather than beneath:
+
+- **The two gaps are the two differentiators.** Overlapping partitions and level of detail are exactly
+  what DataFusion cannot express, and exactly what distinguishes this product from a viewer or a SQL
+  engine. Building on a foundation that cannot represent them means fighting it forever.
+- **Silent wrongness, not slowness.** Halo over an optimiser that assumes disjoint partitions
+  over-counts aggregates without failing. That is the worst available failure mode and it would be
+  structural rather than incidental.
+- **Churn lands where the code is least settled.** Custom physical operators track a trait that has
+  changed repeatedly on a one-to-two-month cadence, in the crates whose own public traits are still
+  being established.
+- **The render path needs a bounded deadline.** Planning latency is a function of user-controlled
+  pipeline complexity; a viewport is bound by its frame. Routing camera-driven requests through a
+  planner couples the two.
+
+Why the design is nonetheless **borrowed**: DataFusion's requirements surface is the right answer to
+out-of-core scheduling (ADR-0001). Writing it for the spatial domain is a few hundred lines and is what
+allows halo to be first-class rather than smuggled, and level of detail to be modelled rather than
+bolted on.
+
+Why SQL is **deferred, not abandoned**: exposing the spatial access layer as a table provider is
+straightforward against a *settled* source, and deferring avoids stabilising two interfaces against
+each other at once. The dependency direction in [[RFC-0006:C-LAYERING]] (2) exists to keep this
+reachable."""
+consequences = """
+### Positive
+
+Halo is expressible without fighting a disjointness assumption, and level of detail can be a native
+concept. The render path has a bounded latency story because nothing between the camera and the spatial
+access layer has unbounded planning cost. Compile time and binary size stay proportionate to a desktop
+application, and the operator engine's public traits settle at their own pace.
+
+### Negative
+
+Aggregation, spill-to-disk and two-phase reduction must be written rather than inherited, and the
+requirements-and-satisfaction planner is original work. There is no SQL and no free Python interoperability
+in the first release, so early users script against Rust or wait.
+
+### Neutral
+
+SQL over point clouds, joins to cadastral and inventory tables, Flight, and the interoperability a table
+provider would supply are deferred rather than forgone — the dependency direction exists to keep them
+reachable, so their absence is a sequencing fact rather than a cost.
+
+Watch for the operator engine's planner growing toward general relational algebra: joins, subqueries,
+cost-based reordering. That is the signal this decision has been misread. The planner should stay a
+requirement-satisfier for spatial operators, and general relational work belongs in the deferred SQL
+component.
+
+Reversal cost is low in the intended direction and high in the other. Adding the SQL component later is
+additive and touches nothing existing; extracting a query-engine dependency from underneath established
+spatial and operator traits would be a rewrite, which is why the dependency direction is specified
+normatively rather than left as a convention."""
+
+[[content.alternatives]]
+text = "DataFusion beside the engine: spatial access, operator engine and renderer take no query-engine dependency; a SQL surface is a separate optional component layered on top, deferred past the first release"
+status = "accepted"
+pros = [
+    "Borrows DataFusion's declare-and-satisfy design without inheriting its release cadence",
+    "Render path talks to spatial access directly, so no planner sits inside the frame budget",
+    "Halo can be first-class rather than smuggled past a disjointness assumption",
+    "Level of detail can be modelled natively instead of bolted onto an exact-answer engine",
+    "Dependency direction preserves the option: exposing a settled spatial layer to an engine later is easy",
+]
+cons = [
+    "The requirements-and-satisfaction machinery must be written, a few hundred lines for the spatial case",
+    "No SQL and no free Python interoperability in the first release",
+    "Aggregation, spill-to-disk and two-phase reduction are reimplemented rather than inherited",
+]
+
+[[content.alternatives]]
+text = "DataFusion beneath everything: implement point cloud operators as custom physical plan nodes, expose the source as a table provider, and route rendering requests through the engine too"
+status = "rejected"
+pros = [
+    "SQL, joins to tabular data and Python interoperability arrive essentially free",
+    "Memory pool, spill-to-disk, two-phase aggregation and Parquet integration are inherited",
+    "Octree pruning fits the table-provider filter-pushdown extension point naturally",
+    "One engine rather than two, so no duplicated planning concepts",
+]
+cons = [
+    "Overlapping halo partitions have no representation, and the optimiser assumes disjointness",
+    "Level of detail and approximate results cannot be expressed or propagated",
+    "Custom physical operators absorb breaking changes every one to two months, permanently",
+    "A throughput-oriented planner in the render path trades a bounded frame budget for an unbounded one",
+]
+rejection_reason = "The two gaps are the two things the product is about. Halo would have to be smuggled past an optimiser that assumes disjointness, where the failure mode is silently over-counted aggregates rather than an error; level of detail has no representation at all in an exact-answer engine. The inherited machinery is real value, but not at the cost of the differentiators."
+
+[[content.alternatives]]
+text = "Ignore DataFusion entirely: design the operator engine from first principles with no reference to tabular query planning, and provide no SQL surface at any point"
+status = "rejected"
+pros = ["No external conceptual constraints; smallest dependency surface"]
+cons = [
+    "Discards a proven solution to the exact scheduling problem at hand",
+    "Forecloses joins to cadastral, inventory and census tables — a large part of the analytical value",
+    "Forgoes Python and Flight interoperability a table provider would supply cheaply",
+]
+rejection_reason = "The declare-requirements-then-insert-satisfying-operators pattern is the correct answer to this problem and there is no reason to rediscover it. Refusing SQL permanently also gives up joins to tabular inventory and cadastral data, a substantial share of what users would do with the output. Adjacency captures the design lesson and keeps the analytical surface available later."

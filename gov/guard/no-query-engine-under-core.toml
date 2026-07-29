@@ -1,0 +1,15 @@
+#:schema ../schema/guard.schema.json
+
+[govctl]
+id = "GUARD-NO-QUERY-ENGINE-UNDER-CORE"
+title = "no query engine under core"
+refs = ["RFC-0006:C-LAYERING"]
+
+[check]
+command = '''
+devenv shell -- bash -c 'ok=1; for c in strider-core strider-io strider-algo strider-view; do
+  cargo tree -p "$c" --prefix none --no-dedupe 2>/dev/null \
+    | grep -Eq "^(datafusion|sqlparser|duckdb|polars)" \
+    && { echo "FAIL: $c depends on a query engine (RFC-0006:C-LAYERING 1)"; ok=0; }
+done; [ $ok -eq 1 ] && echo "no query engine beneath any library crate"''''
+timeout_secs = 900

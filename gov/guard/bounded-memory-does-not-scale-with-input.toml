@@ -1,0 +1,13 @@
+#:schema ../schema/guard.schema.json
+
+[govctl]
+id = "GUARD-BOUNDED-MEMORY-DOES-NOT-SCALE-WITH-INPUT"
+title = "bounded memory does not scale with input"
+refs = [
+    "RFC-0001:C-CONFORMANCE",
+    "RFC-0002:C-MEMORY",
+]
+
+[check]
+command = "devenv shell -- cargo test --release --test conformance_memory -- --ignored --nocapture"
+timeout_secs = 3600

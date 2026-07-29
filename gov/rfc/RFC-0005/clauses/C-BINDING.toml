@@ -1,0 +1,64 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-BINDING"
+title = "Source version fingerprint"
+kind = "normative"
+status = "active"
+
+[content]
+text = """
+Because edits live beside an immutable source rather than inside it, the two can disagree in a way a
+destructive editor cannot experience — there, the file *is* the state. If a source is replaced at the same
+location by a reprocessed file, every node key and index still resolves, and now names different points. Point
+references would be silently wrong, and [[RFC-0007:C-PROVENANCE]] would faithfully record an audit trail of
+nonsense.
+
+1. Every source MUST be bound to a version fingerprint derived from its bytes.
+   - Every point reference MUST name the fingerprint it was taken against (C-IDENTITY 1).
+2. The fingerprint MUST be a BLAKE3 digest.
+   - Where the format provides a spatial index hierarchy, the digest MUST cover the header and that
+     hierarchy.
+   - Where it does not, the digest MUST cover the whole file.
+3. Fingerprint computation MUST be streaming, with memory independent of file size, in conformance with
+   [[RFC-0002:C-MEMORY]] 1.
+4. On fingerprint mismatch the document MUST open read-only.
+   - It MUST identify which edits are bound to the stale fingerprint.
+   - It MUST NOT evaluate point-set edits against the mismatched source.
+   - It MUST NOT re-resolve their references automatically.
+5. A derived artefact — a baked representation, a cache entry, a stored summary — MUST record the fingerprint
+   it was derived from, and MUST be invalidated on mismatch.
+6. The fingerprint algorithm is part of the persisted document format.
+   - A document written by one version MUST remain readable by later versions.
+   - Changing how fingerprints are computed MUST be treated as a breaking change to that format.
+   - On such a change, stored point references MUST be reported as invalidated, and MUST NOT be silently
+     reinterpreted against the new algorithm.
+
+#### Rationale
+
+(2) is a compromise made deliberately rather than an oversight. Digesting a whole 500 GB remote source to
+decide whether to trust it reads the entire file, which contradicts the premise of the project more directly
+than almost any other single action. The header and hierarchy are small, already fetched in order to traverse
+the source at all, and are rewritten by any reprocessing that changes point content — so the cheap digest
+catches the realistic case. Formats without a hierarchy offer nothing cheaper than the file, and such sources
+are typically indexed on ingest anyway, so the digest rides along on a pass already happening.
+
+The residual gap is named rather than hidden: a byte-level substitution preserving the header and hierarchy
+exactly while altering point records would go undetected. Detecting it costs a full read of every source on
+every open, which is not a trade this project can make.
+
+BLAKE3 is specified rather than left open because of (6): the digest is not an implementation detail but a
+field inside saved documents, so an unspecified algorithm would make a document unreadable by a build that
+chose differently. It is used purely as a fast, uniform content digest with no security property intended,
+and its streaming construction is what satisfies (3).
+
+(6) is the obligation that makes the algorithm choice consequential, and it is stated here rather than left
+as rationale because it is a compatibility rule: it constrains what a future version may do, which no
+decision record can enforce. The silent-reinterpretation prohibition is the operative part — a reference
+resolving against a new algorithm would name a different point while appearing intact, which is the failure
+C-IDENTITY 2 forbids arriving by another route.
+
+(4) preserves every edit while evaluating nothing against stale references, and reports *which* edits are
+affected rather than condemning the document — so the user can re-point or discard them deliberately. The
+prohibition on automatic re-resolution is the important half: proximity-matching orphaned references is the
+one behaviour that would produce a wrong number with no signal."""

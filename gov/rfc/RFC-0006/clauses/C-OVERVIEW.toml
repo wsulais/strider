@@ -1,0 +1,27 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-OVERVIEW"
+title = "Overview and scope"
+kind = "informative"
+status = "active"
+
+[content]
+text = """
+Two things determine whether a viewport is usable: what the renderer is allowed to depend on, and what may be
+drawn over it. Both are constraints from outside the renderer rather than choices within it — one imposed by
+licensing and adoption, the other by the fact that composited content carries no depth.
+
+**Scope** — the dependency direction between components and the latency guarantee of the rendering data path;
+what the renderer accepts from its host; where a graphical toolkit may appear; and which content must be
+drawn by the renderer rather than composited over it.
+
+**Out of scope** — the rendering algorithm, level-of-detail selection and the node cache. Interface layout
+and tool design. The render synchronisation boundary, which belongs with editing ([[RFC-0007:C-EXTRACT]]).
+Caching ([[RFC-0004]]).
+
+C-LAYERING is here for one reason only: its item 3 fixes the direction dependencies run, and the direction
+that matters is the one that keeps the spatial access layer adoptable *without* the renderer. Its items 1 and
+2 — the prohibition on a general-purpose query engine — are a data-layer constraint whose argument belongs to
+the operator contract, and they sit here because splitting a three-item clause across two RFCs would cost
+more than the misfit does. That is a judgement, not a claim that they are rendering concerns."""

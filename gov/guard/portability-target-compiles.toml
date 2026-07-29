@@ -1,0 +1,10 @@
+#:schema ../schema/guard.schema.json
+
+[govctl]
+id = "GUARD-PORTABILITY-TARGET-COMPILES"
+title = "portability target compiles"
+refs = ["RFC-0004:C-PORT-GATE"]
+
+[check]
+command = "devenv shell -- cargo check --target wasm32-unknown-unknown --workspace --exclude strider-app --all-features"
+timeout_secs = 900

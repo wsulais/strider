@@ -1,0 +1,54 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-HOST"
+title = "Host-supplied capabilities"
+kind = "normative"
+status = "active"
+
+[content]
+text = """
+Capability interfaces are shaped by the **weakest plausible backend**, not the most convenient one.
+Browser-resident storage is a keyed store with no directories and no in-place modification; object stores
+share the second property; a browser page has threads only under conditions frequently unavailable, and its
+main thread cannot block. An interface assuming otherwise works on the desktop and fails everywhere else —
+as a redesign, not a port.
+
+1. A library crate MUST obtain persistent byte storage through a storage interface supplied by its caller,
+   and MUST NOT call filesystem APIs directly.
+   - This covers any spill, cache, or temporary working set ([[RFC-0002:C-MEMORY]] 4).
+   - The interface MUST NOT assume hierarchical paths.
+   - The interface MUST NOT assume a stored item can be modified in place after being written.
+2. A library crate MUST obtain byte ranges through a retrieval interface supplied by its caller.
+   - Every read MUST be expressed as an explicit offset and length, not against a seekable handle.
+   - The interface MUST support requesting several ranges as one operation.
+3. A library crate MUST obtain parallelism from an executor supplied by its caller, and MUST NOT spawn
+   operating-system threads directly.
+   - It MUST remain functionally correct when that executor runs all work on a single thread, differing
+     only in throughput.
+4. A library crate MUST NOT block its calling thread awaiting retrieval, storage, or computation.
+
+#### Rationale
+
+Which store is available is the caller's knowledge, not the library's: a filesystem on the desktop, an
+object store on a server, a keyed store in a page.
+
+Explicit offset and length in (2), rather than a seekable stream, is what makes the interface implementable
+where retrieval is request-shaped rather than handle-shaped, and what lets an implementation serve a read
+from cache without a round trip. Batched multi-range requests are required because the access pattern
+demands them: resolving a viewport typically names on the order of a hundred nodes at once, and issuing
+those sequentially over a network multiplies latency by the node count — the difference between a viewport
+that fills promptly and one that visibly trickles.
+
+Single-threaded correctness in (3) is the substantive half of that requirement, not a portability
+concession. It makes every operator deterministically testable without a thread pool, turns a class of
+concurrency bug into a reproducible failure, and means the single-threaded configuration is a real fallback
+rather than an untested path. An algorithm that is only correct when work is genuinely concurrent has a
+defect this surfaces immediately.
+
+(4) is likewise independently required on the desktop: [[RFC-0006:C-RENDER]] 2 obliges rendering requests
+to be cancellable without draining dispatched work, and a blocked thread cannot observe a cancellation.
+
+One cost is worth naming at the obligation rather than leaving to the decision record: memory-mapped I/O
+cannot be expressed through (2) at all. What that forfeits, and where it may be recovered, is argued in the
+accompanying architecture decision."""

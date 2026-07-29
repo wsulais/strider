@@ -1,0 +1,17 @@
+[package]
+name = "strider-core"
+version = "0.0.0"
+publish = false
+edition.workspace = true
+rust-version.workspace = true
+# Library crate — permissive per [[RFC-0001:C-LICENSE]] (1).
+license.workspace = true
+repository.workspace = true
+description = "Spatial access and out-of-core execution model for point clouds"
+
+[dependencies]
+arrow = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

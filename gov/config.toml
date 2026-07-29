@@ -1,0 +1,68 @@
+[project]
+name = "strider"
+# Default owner for new RFCs (uses git user.name if not set)
+default_owner = "@wael"
+
+[paths]
+docs_output = "docs"
+# AI agent directory — target for `govctl init-skills`
+# Contains skills/ and agents/ subdirs
+# Default: ".claude" (Claude Code / Claude Desktop)
+# For Cursor: ".cursor"
+# For Windsurf: ".windsurf"
+# agent_dir = ".claude"
+
+[schema]
+version = 3
+
+# [work_item]
+# ID strategy for work items (default: sequential)
+# - sequential: WI-YYYY-MM-DD-NNN (solo projects)
+# - author-hash: WI-YYYY-MM-DD-{hash}-NNN (multi-person teams, uses git email)
+# - random: WI-YYYY-MM-DD-{rand} (simple uniqueness)
+# id_strategy = "author-hash"
+
+[verification]
+# Project-level default guards — quality gates every work item must pass to reach
+# `done`. Each one enforces a clause that is mechanically checkable rather than
+# reviewable: GUARD-PORTABILITY-TARGET-COMPILES is [[RFC-0004:C-PORT-GATE]] itself,
+# GUARD-LIBRARY-LICENCE-COMPATIBILITY is [[RFC-0001:C-LICENSE]] (4),
+# GUARD-NO-QUERY-ENGINE-UNDER-CORE is [[RFC-0006:C-LAYERING]] (1),
+# GUARD-NO-TOOLKIT-UNDER-LIBRARY-CRATES is [[RFC-0006:C-TOOLKIT]] (1), and
+# GUARD-SPEC-CITED-IN-TESTS enforces the test->clause citation convention, and
+# GUARD-CITATION-ANCHORS-RESOLVE catches the two classes govctl check cannot see:
+# an item anchor that outlived a clause renumber, and a bare cross-RFC citation.
+enabled = true
+default_guards = [
+    "GUARD-SPEC-CITED-IN-TESTS",
+    "GUARD-CITATION-ANCHORS-RESOLVE",
+    "GUARD-PORTABILITY-TARGET-COMPILES",
+    "GUARD-NO-AMBIENT-CAPABILITY-IN-LIBRARY-CRATES",
+    "GUARD-LIBRARY-LICENCE-COMPATIBILITY",
+    "GUARD-NO-QUERY-ENGINE-UNDER-CORE",
+    "GUARD-NO-TOOLKIT-UNDER-LIBRARY-CRATES",
+]
+
+# The three RFC-0001:C-CONFORMANCE guards are deliberately ABSENT from default_guards:
+# they are the first release's exit criteria and cannot pass before the operators exist.
+# Promote them to defaults once a halo-declaring operator lands, not before — a default
+# guard that always fails trains everyone to ignore guard output.
+#   GUARD-BOUNDED-MEMORY-DOES-NOT-SCALE-WITH-INPUT
+#   GUARD-HALO-CORRECTNESS-AGAINST-SINGLE-PARTITION-REFERENCE
+#   GUARD-COMMITTED-RUN-IS-BIT-IDENTICAL-ON-REPETITION
+
+[source_scan]
+# Scan source files for [[artifact-id]] references during `govctl check`, so a
+# clause citation in a doc comment or test is validated like any other reference.
+enabled = true
+include = ["crates/**/*.rs", "*.toml", "REUSE.toml", "CONTEXT.md", "docs/*.md", "docs/naming/*.md"]
+exclude = ["target/**"]
+
+# [concurrency]
+# Maximum seconds to wait for exclusive lock before failing (default: 30)
+# Implements govctl RFC-0005 concurrent write safety
+# lock_timeout_secs = 30
+
+[tags]
+# Controlled-vocabulary tags for artifact classification (govctl RFC-0001:C-RESOURCES).
+allowed = ["architecture", "performance", "out-of-core", "licensing", "io-format", "rendering", "gui", "crs", "breaking-change"]

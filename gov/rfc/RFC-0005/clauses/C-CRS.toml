@@ -1,0 +1,35 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-CRS"
+title = "Coordinate reference systems as opaque metadata"
+kind = "normative"
+status = "active"
+
+[content]
+text = """
+A library crate carries a coordinate reference system without understanding it. Interpreting one requires a
+transformation database that a library crate may not open ([[RFC-0004:C-HOST]] 1), so interpretation is the
+host's job and libraries are limited to carrying and comparing.
+
+1. A source and every pipeline stage MUST carry the coordinate reference system of the coordinates it
+   produces.
+   - Where the data has a vertical reference, that MUST be carried too, distinguishably from the horizontal
+     system.
+2. A library crate MUST treat a coordinate reference system as opaque.
+   - It MAY compare two for identity.
+   - It MUST NOT otherwise parse, interpret, or infer from them.
+3. Absence of a declared coordinate reference system MUST be represented distinctly from a declared one, and
+   MUST NOT be defaulted to any particular system.
+
+#### Rationale
+
+(2) keeps interpretation where the authority is. Deciding whether two systems are *equivalent* — as opposed
+to identical — requires the transformation database, so a library crate attempting it would either be wrong
+or would need the filesystem access [[RFC-0004:C-HOST]] 1 forbids. Identity comparison is enough for the
+library's actual need, which is detecting mismatch and refusing to proceed.
+
+(3) exists because the convenient default is the dangerous one. LAS files frequently carry no usable
+coordinate reference system, and assuming one — the project's, the last file's, a plausible local grid —
+produces data that is confidently mislocated rather than obviously unusable. An absent system must propagate
+as absent so that any operation requiring one fails rather than guessing."""

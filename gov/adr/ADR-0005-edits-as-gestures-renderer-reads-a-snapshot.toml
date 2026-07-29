@@ -1,0 +1,192 @@
+#:schema ../schema/adr.schema.json
+
+[govctl]
+id = "ADR-0005"
+title = "Edits as gestures; renderer reads a snapshot"
+status = "accepted"
+date = "2026-07-29"
+refs = [
+    "RFC-0002",
+    "RFC-0002:C-MEMORY",
+    "RFC-0006:C-RENDER",
+    "RFC-0007:C-EDIT",
+    "RFC-0007:C-EXTRACT",
+    "RFC-0007:C-INVALIDATION",
+]
+
+[content]
+context = """
+Manual correction is most of what a point cloud workbench is used for: lasso a region and reclassify
+it, delete strays, fix ground the classifier got wrong. It is also the thing an immutable lazy
+pipeline appears unable to express, and it is CloudCompare's actual value — CloudCompare simply
+mutates an in-memory buffer, which is unavailable here by construction.
+
+The obvious representations all fail. Rewriting the source is impossible for a remote COPC and
+destroys the original for a local one, since COPC nodes are LAZ-compressed chunks whose modification
+means recompression and hierarchy rewriting. Materialising the edited cloud abandons out-of-core
+entirely. Storing per-point overrides requires a stable per-point identifier, which neither LAS nor
+COPC provides.
+
+Graphite suggested the way out. It treats the document *as* a graph and records brush strokes
+parametrically rather than as pixels, so a gesture becomes data fed to a node. Its layer stack is a
+projection of the graph rather than a separate model, which matters because the users here are
+foresters and not node-graph people. Applied to point clouds: a lasso over forty thousand points is
+a polygon, a predicate and an action — roughly a kilobyte, independent of reach — and needs no point
+identity at all, because a polygon survives reprojection and resampling where a point reference
+would not. Being a spatial predicate, it also composes with the octree index instead of fighting it.
+
+Graphite also supplies the warning. After years of development its raster tools remain experimental
+and full non-destructive raster editing is unimplemented; its planned mitigation, JIT compilation, is
+on hold pending Rust toolchain work. Point cloud editing is structurally the raster case rather than
+the vector case — individual samples, not parametric shapes — so the unsolved part is the part that
+transfers.
+
+Three problems remained. Deselecting twelve stray returns among their neighbours is an enumeration
+that no region expresses. A day of manual correction produces thousands of edits, and replaying them
+per partition read makes a file progressively slower to open. And edits do not commute: "classify
+region A as ground" then "delete ground in region B" depends on order where the regions overlap.
+
+The hardest question was whether edits could be graph nodes at all.
+[[RFC-0006:C-RENDER]] 1 forbids the render path from traversing the operator planner, yet the
+renderer must show an edit immediately — which looked like a direct contradiction, and pointed toward
+making edits a privileged overlay outside the graph.
+
+Bevy resolved it. Bevy keeps an authoritative main world and a derived render world, joined at a
+single one-way synchronisation point (the extract), which is the only place both are accessed;
+pipelined rendering then runs frame N+1's logic concurrently with frame N's render. The renderer
+never traverses the authoritative structure, so both obligations hold simultaneously."""
+decision = """
+An edit is a node in the document graph, and the renderer consumes a derived snapshot refreshed at a
+single one-way extract. The obligations are written in [[RFC-0007:C-EDIT]] and
+[[RFC-0007:C-EXTRACT]]; this ADR records only *why*.
+
+Why **the gesture and not the points** (Graphite's move):
+
+- **Size is independent of reach.** A fifty-vertex polygon describes a selection of any magnitude, so
+  an edit is about a kilobyte whether it touched forty points or forty million.
+- **It needs no point identity.** A polygon survives reprojection and resampling; a list of point
+  references does not. This removes the ordinary edit case from depending on an identity the source
+  formats cannot supply.
+- **It composes with the index rather than fighting it.** An edit is already a spatial predicate, so
+  evaluating it touches only intersecting partitions — editing is spatially sparse, and the octree
+  exists to find sparse regions. The edit is therefore an ordinary bounded operator.
+- **Users still see a layer stack.** Graphite's transferable lesson: the graph is the model, the
+  layer and history lists are its projection. Foresters are not node-graph people.
+
+Why an **extract boundary** (Bevy's move), which is what makes the graph viable at all:
+
+- **It dissolves an apparent contradiction.** The renderer must show edits immediately, yet
+  [[RFC-0006:C-RENDER]] 1 forbids it traversing the planner. A derived snapshot satisfies both,
+  because the render path reads the snapshot and never the graph.
+- **One-way flow is a structural guarantee.** The render path works at reduced level of detail by
+  design; because it cannot write back, no camera position can change a result.
+- **It permits pipelining.** The document can be edited while the previous frame is still rendering.
+
+Where the borrowed model is **deliberately not followed**: an engine's extract copies values from a
+resident world, and clears render state every frame. Neither is available here. Extract copies
+*plans* — partition references and effective edit sets — and must never read point data or perform
+retrieval, because it is the one place nothing may block ([[RFC-0007:C-EXTRACT]] 4). Render state is
+*retained* with incremental invalidation rather than cleared, since re-uploading a viewport of points
+per frame is the cost this project exists to avoid ([[RFC-0007:C-INVALIDATION]] 1).
+
+Why only the renderer gets a snapshot: extract exists because of the frame budget, not because of the
+graph. The processing pipeline is throughput-bound and reads the document graph directly, so the
+boundary is built once rather than per consumer.
+
+Why the stack is **spatially indexed**: this is the piece neither reference project supplies, and
+without it every partition read replays every edit and a file grows slower over a day's work. Indexed,
+a partition intersects a handful of edits regardless of how many exist.
+
+The residual gap is acknowledged rather than closed: enumerated point-set edits remain necessary for
+corrections no region expresses, and they require a point identity mechanism specified separately."""
+consequences = """
+### Positive
+
+Editing becomes expressible at all, which was in question. An edit is an ordinary bounded operator, so
+[[RFC-0002]] applies unchanged and nothing new is needed to schedule it. Undo is removing a node and
+history is the graph, so both come free. Edits reorder against processing steps, which the overlay
+alternative could not express. The original source is never modified, so no edit sequence can lose data and
+a remote source needs no write access.
+
+### Negative
+
+The extract boundary is real machinery: retained render state, region-scoped invalidation, and the cost
+bounds [[RFC-0007:C-INVALIDATION]] 3 and 4 impose on resolving an effective edit set. Every processing
+operator must tolerate an edit node appearing anywhere upstream. Two representations of the same data now
+exist, so "which is authoritative" must be answered structurally rather than by convention, which is what
+[[RFC-0007:C-EXTRACT]] 1 and 2 do.
+
+Enumerated point-set edits remain the one case the region model cannot serve, and they carry a dependency
+on point references that the region form was designed to avoid.
+
+### Neutral
+
+Three drifts to watch. First, extract acquiring I/O — the most likely regression, since awaiting retrieval
+there looks locally reasonable and stalls every frame. Second, render state being cleared and rebuilt
+because that is what general-purpose engines do and it is simpler; here it silently reintroduces per-frame
+re-upload. Third, the point-set escape hatch becoming the default because it is easier to implement than
+good region tooling, which would smuggle the identity dependency into the ordinary path.
+
+Reversal cost is moderate and asymmetric. Adding the overlay model later would mean two mutation models
+rather than replacing one. Removing the extract boundary would put planner traversal back in the frame
+budget, so it cannot be dropped without giving up [[RFC-0006:C-RENDER]]."""
+
+[[content.alternatives]]
+text = "Edits are nodes in the document graph, and the renderer consumes a derived snapshot refreshed at a single one-way extract"
+status = "accepted"
+pros = [
+    "An edit is an ordinary bounded operator — no new execution machinery, and RFC-0001 applies unchanged",
+    "Region edits need no point identity, and survive reprojection and resampling",
+    "Edit size is independent of reach: a polygon covers forty points or forty million",
+    "Undo is removing a node; history is the graph; edits reorder against processing steps",
+    "Extract satisfies [[RFC-0006:C-RENDER]] 1 — the render path never traverses the graph",
+    "One-way flow makes it structurally impossible for a camera position to change results",
+]
+cons = [
+    "Requires extract, retained render state, spatially scoped change signals and a spatial index over the stack",
+    "Every processing operator must tolerate an edit node appearing anywhere upstream",
+    "Enumerated point-set edits still need an identity mechanism, deferred to a separate specification",
+]
+
+[[content.alternatives]]
+text = "Edits are a privileged overlay the spatial access layer applies when producing batches; processing operators never see them as nodes"
+status = "rejected"
+pros = [
+    "Much smaller blast radius: no extract, no graph traversal from the render path",
+    "The renderer already talks to the spatial access layer directly, so edits are visible for free",
+    "Processing operators see edited data and need no awareness of editing at all",
+]
+cons = [
+    "Two mutation models coexist: edits, and operators that change attributes",
+    "An edit can never be placed between two processing steps — the gesture is inexpressible",
+    "Undo, history and reordering need bespoke machinery instead of reusing the graph's",
+]
+rejection_reason = "Chosen only because the render-latency obligation appeared to rule out the graph, and extract shows it does not. Once the renderer consumes a derived snapshot, this option and the accepted one behave identically at runtime — so its supposed advantage evaporates while its costs remain: two mutation models, bespoke undo, and no way to interleave an edit with a processing step."
+
+[[content.alternatives]]
+text = "Edits are nodes in the document graph, and the renderer traverses that graph directly with no snapshot"
+status = "rejected"
+pros = [
+    "One representation, no extract boundary, no synchronisation to reason about",
+    "No possibility of the render view diverging from the document",
+]
+cons = [
+    "Puts planner traversal inside the frame budget, violating [[RFC-0006:C-RENDER]] 1",
+    "Planning cost is a function of user-controlled pipeline complexity and so unbounded",
+    "Nothing prevents render-side level-of-detail choices from reaching authoritative evaluation",
+]
+rejection_reason = "It couples an interactive deadline to an operation with no deadline, which is exactly what [[RFC-0006:C-RENDER]] exists to forbid. The failure mode is a viewport that stalls while the camera moves, worsening as the user builds a longer pipeline."
+
+[[content.alternatives]]
+text = "Destructive editing: materialise the edited cloud, or rewrite the source in place"
+status = "rejected"
+pros = [
+    "Simplest possible model, and what CloudCompare users already expect",
+    "No stack to evaluate, no consolidation, no divergence between document and data",
+]
+cons = [
+    "Rewriting a remote COPC is impossible; rewriting a local one destroys the original",
+    "COPC nodes are LAZ-compressed chunks, so modification means recompression and hierarchy rewriting",
+    "Materialising the edited cloud abandons out-of-core, the project's entire premise",
+]
+rejection_reason = "Directly contradicts [[RFC-0002:C-MEMORY]] and the reason the project exists. It also makes every edit irreversible and forecloses provenance entirely, since a rewritten file carries no record of what it used to be."

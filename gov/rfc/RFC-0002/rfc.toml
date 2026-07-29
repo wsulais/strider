@@ -1,0 +1,39 @@
+#:schema ../../schema/rfc.schema.json
+
+[govctl]
+id = "RFC-0002"
+title = "The operator contract"
+version = "0.1.0"
+status = "draft"
+phase = "spec"
+owners = ["@wael"]
+created = "2026-07-29"
+updated = "2026-07-29"
+tags = [
+    "architecture",
+    "out-of-core",
+    "performance",
+]
+
+[[sections]]
+title = "Summary"
+clauses = ["clauses/C-OVERVIEW.toml"]
+
+[[sections]]
+title = "Specification"
+clauses = [
+    "clauses/C-EXEC.toml",
+    "clauses/C-HALO.toml",
+    "clauses/C-MEMORY.toml",
+    "clauses/C-PROJECTION.toml",
+    "clauses/C-APPROX.toml",
+    "clauses/C-EXTENSION.toml",
+    "clauses/C-EXPRESSION.toml",
+    "clauses/C-ORIGIN.toml",
+    "clauses/C-VERIFIED.toml",
+]
+
+[[changelog]]
+version = "0.1.0"
+date = "2026-07-29"
+notes = "Initial draft"

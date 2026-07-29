@@ -1,0 +1,22 @@
+# Ambient-capability lints. The wasm32 build gate
+# (GUARD-PORTABILITY-TARGET-COMPILES) catches *dependencies* that cannot target a
+# constrained host, but NOT these calls: wasm32-unknown-unknown ships a stubbed
+# std, so `std::fs::read` and `std::thread::spawn` compile there and fail only at
+# runtime. Enforcing [[RFC-0004:C-HOST]] therefore needs a lint, not just a target.
+#
+# Verified 2026-07-29: a probe using std::fs::read and std::thread::spawn compiled
+# clean for wasm32-unknown-unknown. This file is what makes it fail instead.
+
+disallowed-types = [
+    { path = "std::fs::File", reason = "RFC-0004:C-HOST 1 — persistent storage comes from the host storage interface, not the filesystem" },
+    { path = "std::path::Path", reason = "RFC-0004:C-HOST 1 — the storage interface is keyed, not hierarchical; a path type presumes directories" },
+    { path = "std::path::PathBuf", reason = "RFC-0004:C-HOST 1 — as above; take a key from the caller instead" },
+]
+
+disallowed-methods = [
+    { path = "std::fs::read", reason = "RFC-0004:C-HOST 1 — read through the host retrieval interface" },
+    { path = "std::fs::write", reason = "RFC-0004:C-HOST 1 — write through the host storage interface" },
+    { path = "std::fs::read_to_string", reason = "RFC-0004:C-HOST 1 — read through the host retrieval interface" },
+    { path = "std::thread::spawn", reason = "RFC-0004:C-HOST 3 — parallelism comes from the caller's executor" },
+    { path = "std::thread::sleep", reason = "RFC-0004:C-HOST 4 — library crates must not block the calling thread" },
+]

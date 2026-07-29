@@ -1,0 +1,61 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-HALO"
+title = "Neighbourhood halo and partition overlap"
+kind = "normative"
+status = "active"
+
+[content]
+text = """
+Normal estimation, nearest-neighbour features, outlier removal and cloth-simulation ground filtering all
+need points beyond the partition being processed: a point near the edge of an octree node has neighbours
+in sibling nodes and in nodes at other levels of detail. Supplying those neighbours means partitions
+**overlap**, which is the one place borrowing a tabular planner's assumptions produces wrong answers
+rather than slow ones.
+
+1. Halo points supplied to satisfy an operator's declared halo width (C-EXEC 1) MUST be distinguishable
+   from the partition's own points by a dedicated boolean attribute in the batch.
+   - An operator MAY read halo points.
+   - An operator MUST NOT emit halo points to its output.
+   - The halo attribute MUST NOT be present in a pipeline's final output.
+2. A partitioning that carries a nonzero halo MUST NOT be treated as a disjoint partitioning.
+   - Before any operation whose correctness depends on each point appearing in exactly one partition —
+     partial-then-final aggregation, counting, summation, mean — the planner MUST either remove the halo
+     or reject the pipeline.
+3. An operator's declared halo width MUST be sufficient for its own neighbourhood definition at every
+   point it emits.
+   - Where the operator's neighbourhood is defined by a count of neighbours rather than a distance, the
+     declared width MUST bound that neighbourhood for the densities the operator accepts, or the operator
+     MUST declare its output approximate under C-APPROX 1.
+4. Conformance to (3) MUST be verified, for each operator declaring a nonzero halo width, by comparing
+   output computed over multiple partitions against output computed with the input in a single partition.
+   - Where the operator does not declare its output approximate, the two MUST be identical.
+   - Where it does, the divergence MUST be bounded and that bound MUST be verified.
+
+#### Rationale
+
+Halo membership is the only spatial property that is genuinely per-point rather than per-stage, so it
+cannot live where C-EXEC 4 puts the others. Carrying it as an ordinary boolean column keeps C-EXEC 3
+intact — an external Arrow consumer sees a normal column, not an envelope.
+
+**Read-but-never-emit** is what prevents duplication. A point near a boundary is supplied to every
+partition whose halo reaches it; if each emitted it, the point would appear several times in the output.
+The rule is what makes a partitioned neighbourhood computation produce the same point count as its
+whole-dataset equivalent.
+
+The non-disjointness rule (2) exists because the failure is silent. An aggregation over a halo
+partitioning does not fail, log, or crash — it returns a plausible number, too large in proportion to the
+ratio of boundary points to interior points, which is exactly the ratio that grows as partitions get
+smaller. Making it a *planner* obligation rather than an operator-author convention is deliberate: it
+cannot be left to whoever writes the next aggregate to remember.
+
+(3) is the obligation C-EXEC 1 does not cover. C-EXEC 1 requires a width to be *declared*; this requires
+it to be *right*, which is a different claim and the one that can be wrong while everything appears to
+work. A k-nearest-neighbour radius depends on local density, so an operator cannot always bound it in
+advance — hence the escape to approximation rather than a prohibition.
+
+(4) is the verification that cannot be faked, and the identical-not-approximate requirement is stronger
+than it looks. It is tempting to treat small boundary differences as an acceptable tolerance; they are
+not. A sufficient halo makes partitioning exactly lossless, so a difference is evidence the declared width
+is too small — a correctness defect that grows as partitions get smaller."""

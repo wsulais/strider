@@ -1,0 +1,38 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-PROJECTION"
+title = "Attribute projection"
+kind = "normative"
+status = "active"
+
+[content]
+text = """
+An operator already declares the attributes it reads (C-EXEC 1). That declaration is a projection, so a
+source need never materialise more than the pipeline uses — and requiring the projection to be invisible
+in the results turns it into a test of whether those declarations are honest.
+
+1. The planner MUST compute, from the declared attributes of a pipeline's operators, the set of attributes
+   that pipeline requires, and MUST supply it to the source as a projection.
+2. A source MUST accept a projection.
+   - It MUST NOT materialise attributes outside the projection into the batches it emits.
+3. A projection MUST NOT change results.
+   - A pipeline evaluated with and without projection MUST produce identical output.
+
+#### Rationale
+
+No new declaration is needed for any of this: C-EXEC 1 already requires an operator to state the
+attributes it reads, for scheduling reasons, so projection is available at no additional specification
+cost.
+
+The achievable saving differs sharply by format, and is worth recording so it is not over-estimated. In a
+columnar format, unrequested columns are never read from storage at all. In LAS and LAZ, point records are
+row-oriented and a compressed chunk is a unit — the decompressor must run over the record stream to
+recover any field — so the saving is in materialisation into Arrow arrays rather than in decompression or
+in bytes read. Column-aware access is therefore an argument for prioritising a columnar storage path
+rather than an optimisation of LAZ, which is worth knowing before effort is spent on a decoder in
+expectation of columnar gains.
+
+(3) is the part that earns its place. An operator reading an attribute it did not declare produces
+different output under projection, so requiring identity makes an under-declared attribute set detectable
+rather than latent — the same shape of check that [[RFC-0001:C-CONFORMANCE]] applies to halo width."""

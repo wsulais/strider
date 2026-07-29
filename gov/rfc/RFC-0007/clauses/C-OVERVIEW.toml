@@ -1,0 +1,27 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-OVERVIEW"
+title = "Overview and scope"
+kind = "informative"
+status = "active"
+
+[content]
+text = """
+Manual correction — lasso a region and reclassify, delete strays, fix ground the classifier got wrong — is
+the greater part of what a point cloud workbench is used for, and the thing an immutable lazy pipeline
+appears unable to express. This RFC specifies how it is expressed anyway.
+
+**Scope** — how an edit is represented and stored; how the document reaches the screen and what is
+invalidated when it changes; how a long edit stack is consolidated; and what record is kept of what was
+changed.
+
+**Out of scope** — the operator contract an edit is evaluated under ([[RFC-0002]]). Point references, which
+the enumerated edit form depends on ([[RFC-0005:C-IDENTITY]]). What the renderer draws into
+([[RFC-0006]]). Selection interaction and tool ergonomics.
+
+Two moves carry most of the weight. An edit stores **the gesture, not the points** — a lasso over forty
+thousand points is a polygon, a predicate and an action, about a kilobyte regardless of reach, needing no
+point identity at all. And the renderer consumes a **derived snapshot** refreshed at one one-way
+synchronisation point, which is what lets it show an edit immediately without traversing the operator planner
+and so without breaching [[RFC-0006:C-RENDER]] 1."""

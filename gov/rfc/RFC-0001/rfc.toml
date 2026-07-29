@@ -1,0 +1,38 @@
+#:schema ../../schema/rfc.schema.json
+
+[govctl]
+id = "RFC-0001"
+title = "Strider: streaming and out-of-core point cloud processing"
+version = "0.1.0"
+status = "draft"
+phase = "spec"
+owners = ["@wael"]
+created = "2026-07-29"
+updated = "2026-07-29"
+tags = [
+    "architecture",
+    "out-of-core",
+    "licensing",
+    "performance",
+]
+
+[[sections]]
+title = "Summary"
+clauses = [
+    "clauses/C-INTRO.toml",
+    "clauses/C-MOTIVATION.toml",
+    "clauses/C-OVERVIEW.toml",
+]
+
+[[sections]]
+title = "Specification"
+clauses = [
+    "clauses/C-LICENSE.toml",
+    "clauses/C-CONTRIB.toml",
+    "clauses/C-CONFORMANCE.toml",
+]
+
+[[changelog]]
+version = "0.1.0"
+date = "2026-07-29"
+notes = "Initial draft"

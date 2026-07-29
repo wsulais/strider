@@ -1,0 +1,36 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-CONFORMANCE"
+title = "Release claims"
+kind = "normative"
+status = "active"
+
+[content]
+text = """
+Every claim this project makes will be believed true before it is verified, and stated publicly on that
+belief, at which point correcting it is embarrassing rather than routine. This clause makes the claim
+contingent on the check instead of on confidence.
+
+1. A release MUST NOT assert a property whose corresponding verification has not passed.
+   - Where a property is verified only under stated conditions, those conditions MUST be published with the
+     assertion.
+   - Where a definition in `CONTEXT.md` and a normative clause disagree, the clause governs.
+   - The verifications themselves live with the properties they establish: bounded memory at
+     [[RFC-0002:C-MEMORY]] 5, halo correctness at [[RFC-0002:C-HALO]] 4, reproducibility at
+     [[RFC-0003:C-COMMIT]] 6, projection transparency at [[RFC-0002:C-PROJECTION]] 3, and operator
+     conformance at [[RFC-0002:C-VERIFIED]].
+
+#### Rationale
+
+The obligation is deliberately about *assertion* rather than about achievement. Nothing here requires a
+release to have any particular property; it requires that whatever it claims has been checked. That is the
+only form of the rule this document can own, because every property it would otherwise describe belongs to
+another RFC.
+
+A young project satisfies this more easily than it appears, because every honesty obligation in the
+specification has a **refusal half** implementable before its capability half. Mismatched coordinate systems
+and vertical references are refused ([[RFC-0005:C-TRANSFORM]] 4, [[RFC-0005:C-VERTICAL]] 1); unsatisfiable
+pipelines are rejected naming the unmet requirement ([[RFC-0002:C-EXEC]] 2). Refusal is what those clauses
+prescribe, so "transformation is not implemented yet" is a conformant position rather than an unmet
+obligation — a release may be honest without being complete."""

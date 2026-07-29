@@ -1,0 +1,45 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-TRANSFORM"
+title = "Transformation is host-supplied and applies to queries"
+kind = "normative"
+status = "active"
+
+[content]
+text = """
+Reprojecting a point cloud is close to the worst available operation on one: per-point trigonometry over
+billions of points, changing no information, and destroying the scaled-integer representation that makes
+exact accumulation possible. The alternative is to transform what is small — bounds and outputs — and leave
+the points alone.
+
+1. A library crate MUST obtain coordinate transformation from a capability supplied by its caller, and MUST
+   NOT link or invoke a transformation library directly.
+2. Stored point coordinates MUST NOT be transformed as a side effect of querying, rendering, or displaying.
+   - A query expressed in one system MUST instead be satisfied by transforming the query region into the
+     source's system.
+3. Transformation of point coordinates MUST occur only through an explicit operator.
+   - Such an operator MUST declare zero halo width and a single pass ([[RFC-0002:C-EXEC]] 1).
+   - Conversion between vertical references is such a transformation and is subject to this item.
+4. An operation combining sources whose coordinate reference systems are not identical MUST either include
+   an explicit transformation operator or fail.
+   - Where it fails, the failure MUST name the mismatch.
+   - It MUST NOT transform implicitly to make the operation succeed.
+
+#### Rationale
+
+(2) is the substantive requirement. Transforming a viewport's bounds costs a handful of operations;
+transforming the points it contains costs billions. Beyond cost, LAS and COPC store coordinates as scaled
+integers, so reprojection requires requantisation — which is lossy and forfeits the bit-identity
+[[RFC-0003:C-COMMIT]] 2 requires, by moving aggregates from exact integer arithmetic onto floating point
+where reduction order starts to matter. Keeping points in their native system also means references into
+them stay valid, which is what C-IDENTITY relies on and the reason reprojection cannot orphan an edit.
+
+(3) needs no new machinery: an explicit reprojection is position-independent, so declaring zero halo and one
+pass makes it exact under extent restriction by [[RFC-0003:C-RESOLUTION]] 2. Applying a geoid model has the
+same shape — a bounded grid summary broadcast over batches — which is why vertical conversion is folded in
+here rather than specified separately.
+
+(4) refuses the implicit conversion because the implicit conversion is how mismatches stop being visible. A
+tool that quietly reprojects to make an operation succeed has removed the user's only signal that two
+datasets were not comparable."""

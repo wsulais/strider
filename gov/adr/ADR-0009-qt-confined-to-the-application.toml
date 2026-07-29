@@ -1,0 +1,197 @@
+#:schema ../schema/adr.schema.json
+
+[govctl]
+id = "ADR-0009"
+title = "Qt confined to the application"
+status = "accepted"
+date = "2026-07-29"
+refs = [
+    "RFC-0001:C-LICENSE",
+    "RFC-0004:C-HOST",
+    "RFC-0004:C-PORT-GATE",
+    "RFC-0006:C-OVERLAY",
+    "RFC-0006:C-RENDER",
+    "RFC-0006:C-SURFACE",
+    "RFC-0006:C-TOOLKIT",
+]
+
+[content]
+context = """
+The renderer has to draw into something the graphical toolkit controls, and the obvious approaches were
+foreclosed by constraints already in force.
+
+Licensing decided the shape before graphics did. Qt's open-source terms are LGPL-3.0 and GPL-3.0, and
+[[RFC-0001:C-LICENSE]] 4 forbids any dependency beyond `Apache-2.0 OR MIT` beneath a library crate. Qt
+therefore cannot appear beneath the renderer at all; it belongs only in the application, which is
+`AGPL-3.0-or-later`. This reframed the question entirely: not how Rust talks to Qt, but what surface the
+renderer accepts such that the application can obtain one from Qt.
+
+A loophole in that reasoning needed closing. Qt is also sold commercially, and under a commercial licence
+its copyleft obligations do not apply — so it can be argued that a Qt dependency beneath a library crate
+is compliant *for this project*. It would not be compliant for anyone else: a crate published as
+`Apache-2.0 OR MIT` while requiring Qt silently obliges every adopter to accept LGPL terms or buy a
+licence, making the declared licence misleading in precisely the way that clause exists to prevent.
+
+Three further constraints narrowed what the renderer may be. It may not block
+([[RFC-0004:C-HOST]] 4). Its data requests must be cancellable without draining dispatched work
+([[RFC-0006:C-RENDER]] 2) — and a renderer that blocks on presentation cannot observe a cancellation. And
+it must compile for a host with no threads ([[RFC-0004:C-PORT-GATE]] 1), so it cannot own a render
+thread. Together these rule out the ordinary embedded-renderer arrangement, which spawns a render thread
+and blocks on present.
+
+Among bindings, `cxx-qt` from KDAB is the realistic choice: CXX-based, generates QObject subclasses from
+Rust, integrates with Qt's build system, actively maintained. `qmetaobject-rs` is lighter but thinner on
+QML and less maintained; hand-written `cxx` bridges mean writing the QObject glue by hand; the older
+`ritual`-generated bindings are effectively abandoned. Because the toolkit is confined to the
+application, this choice sits outside any published contract and can change without governance.
+
+For compositing wgpu output into a Qt scene, three routes existed. Qt's sanctioned path —
+`QRhiWidget` and `QQuickRhiItem`, Qt 6.7 and later — expects *Qt's* RHI rather than wgpu, so sharing a
+device means importing external memory per backend: Vulkan external memory extensions, D3D12 shared
+handles, Metal surfaces. Rendering to an offscreen wgpu texture and importing it as a Qt scene-graph
+texture is smaller in surface area but still needs native handle interop per backend. Giving wgpu a
+native window handle from a `QWindow` and letting it own that surface avoids interop entirely, at the
+cost that the viewport is not composited into the scene graph, so toolkit content cannot overlay it.
+
+Examining what overlay is actually for settled the sequencing. Depth-dependent content — a measurement
+anchored to a point behind a stand — cannot be composited correctly at all, because composited content
+carries no depth and floats in front of geometry it should be behind; such content has to be drawn by the
+renderer regardless of route. What genuinely wants overlay is depth-insensitive interface chrome, which is
+valuable but not urgent."""
+decision = """
+The renderer accepts an opaque native surface handle from its host and presents to it directly; the
+application obtains that handle from Qt, and Qt appears nowhere else. Offscreen compositing is admitted
+by the same contract and adopted when depth-insensitive overlay is wanted. The obligations are written in
+[[RFC-0006:C-TOOLKIT]], [[RFC-0006:C-SURFACE]] and [[RFC-0006:C-OVERLAY]]; this ADR records only *why*.
+
+Why the toolkit is **confined to the application**:
+
+- **Licensing forbids the alternative.** Qt's open-source terms are LGPL-3.0 and GPL-3.0, beyond what
+  [[RFC-0001:C-LICENSE]] 4 permits beneath a library crate.
+- **The commercial-licence loophole is closed deliberately.** A commercial Qt licence would remove the
+  copyleft obligation for this project while leaving every adopter of an `Apache-2.0 OR MIT` crate
+  obliged to accept LGPL or buy a licence. [[RFC-0001:C-LICENSE]] 4 states this in general form, because
+  the same argument arrives for any dual-licensed dependency.
+- **The architectural reason outlives the licensing one.** A renderer that knows its toolkit is adoptable
+  only by applications using that toolkit, which defeats the purpose of publishing it permissively.
+
+Why the renderer takes a **surface it does not own**:
+
+- **It cannot own a thread or block.** [[RFC-0004:C-PORT-GATE]] 1 and [[RFC-0004:C-HOST]] 3 and 4 rule
+  out the ordinary embedded-renderer arrangement. The host drives frames; the renderer is a function from
+  state to drawn output. This is also what makes [[RFC-0006:C-RENDER]] 2 achievable, since a renderer
+  blocked on presentation cannot observe a cancellation.
+- **A native handle is universal and free.** Every windowing system exposes one, and so does a browser
+  canvas — so this satisfies portability with no second code path.
+
+Why **direct presentation first**, and offscreen compositing second:
+
+- **It defers all graphics interop.** Sharing a device with the toolkit's own renderer needs external
+  memory import per backend — Vulkan extensions, D3D12 shared handles, Metal surfaces — which is
+  platform-specific work unrelated to point clouds, spent before the out-of-core claim is demonstrated.
+- **The urgent half of the overlay benefit does not exist.** Depth-dependent content cannot be
+  composited correctly under *any* route, because composited content carries no depth and floats in front
+  of geometry it should occlude — a measurement anchored behind a stand would read as belonging to the
+  near surface. Such content must be renderer-drawn regardless, which is what
+  [[RFC-0006:C-OVERLAY]] 1 requires. What overlay genuinely enables is depth-insensitive chrome:
+  valuable, not urgent.
+- **The transition costs nothing later because it is admitted now.** [[RFC-0006:C-SURFACE]] 4 requires
+  the renderer to accept a target it does not present, since rendering into a host-composited target is a
+  superset of presenting to a surface. Adopting offscreen compositing therefore changes the application,
+  not the renderer's published contract.
+
+`cxx-qt` is the intended binding, and is deliberately *not* governed: it lives entirely in the
+application, so it is a reversible implementation choice rather than a contract, and a churning binding
+in the copyleft application layer is a far smaller risk than one beneath a permissive library."""
+consequences = """
+### Positive
+
+No graphics interop work in the first release, so effort goes to the out-of-core claim instead of per-backend
+external memory. The renderer stays toolkit-agnostic and therefore adoptable, which is the point of
+publishing it permissively. A browser target needs no second path, since a canvas yields the same kind of
+handle. Depth-correct content is straightforward because wgpu is authoritative over the 3D path.
+
+### Negative
+
+Toolkit content cannot overlay the viewport until offscreen compositing is adopted, so the interface is
+chrome around a viewport rectangle — a real constraint on layout. Anything drawn inside the viewport,
+including text, must be drawn by the renderer. The viewport region also does not participate in toolkit
+layering or transforms.
+
+### Neutral
+
+The chrome-around-a-rectangle arrangement is what CloudCompare and QGIS's 3D view both use, so it is
+conventional rather than a regression — whether it reads as a limitation depends on the interface being
+designed, not on the decision.
+
+Offscreen compositing is planned rather than hypothetical and is admitted by [[RFC-0006:C-SURFACE]] 4, so
+the work is an application change when wanted. The binding choice is likewise reversible, being confined to
+the application and outside any published contract.
+
+Two drifts to watch. First, depth-dependent content being composited by the toolkit because drawing text
+there is far easier than drawing it in the renderer — the result looks correct in any screenshot where
+nothing occludes it, which is why [[RFC-0006:C-OVERLAY]] 1 prohibits it rather than discouraging it. Second,
+a toolkit dependency reaching a library crate transitively through a convenience crate, which breaks nothing
+visible and no test detects; hence the graph check in [[RFC-0006:C-TOOLKIT]] 1.
+
+Reversal cost is low in the intended direction and unavailable in the other. Moving to offscreen compositing
+is additive and touches the application only. Reversing the toolkit confinement is not available at all,
+since it would breach [[RFC-0001:C-LICENSE]] 4."""
+
+[[content.alternatives]]
+text = "Renderer accepts an opaque native surface handle and presents to it directly; the application obtains the handle from a QWindow"
+status = "accepted"
+pros = [
+    "No graphics interop at all — no external memory import, no per-backend handle translation",
+    "Keeps the renderer free of any toolkit dependency, as [[RFC-0001:C-LICENSE]] 4 requires",
+    "A native surface handle is also what a browser canvas exposes, satisfying [[RFC-0004:C-PORT-GATE]] with no second path",
+    "wgpu stays authoritative over the 3D path, so depth-correct content is straightforward",
+    "Admitting an offscreen target in the same contract makes the later transition an application change only",
+]
+cons = [
+    "The viewport is not composited into the scene graph, so toolkit content cannot overlay it",
+    "Fights toolkit layering and transforms applied to the viewport region",
+    "Text and chrome drawn inside the viewport must be drawn by the renderer",
+]
+
+[[content.alternatives]]
+text = "Render to an offscreen wgpu texture and import it as a toolkit scene-graph texture"
+status = "considered"
+pros = [
+    "Viewport composites into the scene graph, so depth-insensitive chrome can overlay it",
+    "wgpu remains authoritative over the 3D path",
+    "Smaller interop surface than sharing a device with the toolkit's own renderer",
+]
+cons = [
+    "Still requires native texture handle interop per graphics backend",
+    "Platform-specific work in exactly the areas that are hardest to test",
+    "An extra copy or import per frame relative to presenting directly",
+]
+
+[[content.alternatives]]
+text = "Use the toolkit's own rendering abstraction as the backend, dropping wgpu"
+status = "rejected"
+pros = [
+    "Native compositing with no interop whatsoever; the sanctioned path",
+    "Overlay, layering and transforms all work as the toolkit intends",
+]
+cons = [
+    "Puts the toolkit beneath the renderer, which [[RFC-0001:C-LICENSE]] 4 forbids outright",
+    "Renderer becomes unusable by any tool not built on that toolkit, defeating permissive publication",
+    "Forecloses a browser target, since the abstraction does not exist there",
+]
+rejection_reason = "It requires the toolkit to be a dependency of a library crate, which licensing prohibits and which would make the renderer adoptable only by applications using the same toolkit. Publishing these crates permissively is intended to make them shared infrastructure; a renderer welded to one toolkit is the opposite."
+
+[[content.alternatives]]
+text = "Share a graphics device between wgpu and the toolkit's renderer via external memory, using the toolkit's RHI widget classes"
+status = "rejected"
+pros = [
+    "The toolkit's officially supported integration path for foreign renderers",
+    "Full compositing with the scene graph from the outset",
+]
+cons = [
+    "Requires external memory import per graphics backend — Vulkan extensions, D3D12 shared handles, Metal surfaces",
+    "Platform-specific graphics work with nothing to do with point clouds, before the core claim is proven",
+    "Device sharing failures are notoriously difficult to diagnose and vary by driver",
+]
+rejection_reason = "It spends months on per-backend graphics interop before the out-of-core claim the project exists to prove has been demonstrated. The overlay capability it buys is only needed for depth-insensitive chrome, since depth-dependent content must be renderer-drawn under any route — so the urgent half of the benefit does not exist."

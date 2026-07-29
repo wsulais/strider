@@ -1,0 +1,39 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-EXTENSION"
+title = "Extension surface"
+kind = "normative"
+status = "active"
+
+[content]
+text = """
+There is no plugin mechanism. An operator is written in-tree or by a consumer building against the published
+crates, and everything else composes what already exists.
+
+1. An operator MUST be implemented either in-tree or by a consumer depending on the published library crates
+   and implementing their published interfaces.
+   - A natively compiled library loaded at run time MUST NOT be admitted as an operator.
+2. A pipeline MUST be expressible as the serialised document graph required by [[RFC-0007:C-PROVENANCE]] 5.
+   - A separate pipeline format MUST NOT be introduced alongside it.
+3. An automation or scripting facility MUST NOT be able to introduce an operator.
+   - It MAY compose registered operators and expressions (C-EXPRESSION), and nothing else.
+4. Arbitrary user code MUST NOT be admitted as an operator.
+   - Should a mechanism for it be introduced, that mechanism MUST supply the code's capabilities explicitly
+     and MUST deny it ambient access, consistent with [[RFC-0004:C-HOST]].
+
+#### Rationale
+
+(1)'s prohibition on runtime-loaded native libraries is not a preference. Such a library has ambient
+filesystem and network access, so it cannot satisfy [[RFC-0004:C-HOST]]; it cannot exist on a target without
+dynamic loading, so it breaks [[RFC-0004:C-PORT-GATE]] 1; and a fault in it terminates the process holding
+unsaved work. Why building against the crates is a real path rather than a consolation — and what the
+rejected mechanisms were — is argued in the accompanying architecture decision.
+
+(3) is the load-bearing restriction and the reason this clause is written before any automation facility
+exists. A scripting layer that can introduce an operator is an escape hatch around every contract here, and
+declining now is far easier than withdrawing later.
+
+(4) is split so the presently-testable prohibition stands alone and the condition on any future mechanism
+hangs beneath it. Only the prohibition is verifiable today; as one item, a compliance check could not tell
+which half it was testing."""

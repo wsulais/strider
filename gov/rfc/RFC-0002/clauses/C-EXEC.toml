@@ -1,0 +1,55 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-EXEC"
+title = "Operator model and requirement satisfaction"
+kind = "normative"
+status = "active"
+
+[content]
+text = """
+An operator expressed only as an opaque stream transform cannot be scheduled out of core: it has no way
+to tell the scheduler it needs points it was not handed, so it either produces silently wrong answers at
+every partition boundary or forces the whole dataset into memory. Requirements are therefore
+**declared**, and satisfying them is the planner's obligation rather than the operator's.
+
+1. Every operator MUST declare, without being executed, the requirements it places on its input. The
+   declaration MUST include:
+   - the **spatial partitioning** it requires;
+   - the **minimum halo width** it requires (C-HALO);
+   - the **attributes** it reads (C-PROJECTION);
+   - the **number of passes** it makes over its input.
+2. The planner MUST insert operations that satisfy each declared requirement before the operator
+   executes.
+   - It MUST reject a pipeline whose declared requirements cannot be satisfied, and the rejection MUST
+     name the operator and the specific unmet requirement.
+   - It MUST NOT execute an operator whose requirements are unsatisfied.
+3. The representation at every operator boundary MUST be an Apache Arrow record batch with no
+   Strider-specific envelope, header, or sidecar.
+   - An operator MUST NOT require its input to be re-encoded from a plain Arrow batch before use.
+   - An operator MUST NOT emit output that requires Strider-specific decoding before an unrelated Arrow
+     consumer can read it.
+4. A stream's spatial properties — **bounding volume**, **level of detail**, **source partition
+   identity**, and **halo width** — MUST be properties of the *stage* that produces the stream, and MUST
+   NOT be fields attached to individual records or batches.
+   - A planner MUST be able to determine every such property without reading point data.
+   - The sole exception is **halo membership**, which is genuinely per-point and is carried as an
+     ordinary column (C-HALO 1).
+
+#### Rationale
+
+Declaring **pass count** matters as much as declaring halo width, and is the item most easily omitted. An
+operator that summarises its input and then revisits it — the shape of morphological ground filters and of
+height above ground — needs the planner to arrange two traversals *and* needs the source to be
+replayable. A single stream transform expresses one pass, so nothing in its signature communicates the
+second.
+
+Requiring the planner to *name* the unmet requirement (2), rather than fail generically, is what makes an
+unsatisfiable pipeline diagnosable by whoever assembled it rather than by whoever wrote the planner.
+
+The prohibition in (3) is on the *envelope*, not on richness: a batch may carry any columns, including
+ones Strider defines. What it may not do is require Strider code to be readable at all.
+
+(4) is what lets the planner reason before reading — proving a requirement already satisfied, or
+rejecting a pipeline, without touching point data. The accepted cost is that a stream is not
+self-describing in isolation: a batch handed to an external consumer carries no spatial context."""

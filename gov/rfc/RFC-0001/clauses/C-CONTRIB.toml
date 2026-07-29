@@ -1,0 +1,30 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-CONTRIB"
+title = "Contribution terms and relicensing"
+kind = "normative"
+status = "active"
+
+[content]
+text = """
+Contribution terms determine what the project can later do with its own code. The choice here deliberately
+forecloses one class of business model in exchange for lower contribution friction, and that trade is stated
+rather than left to be discovered.
+
+1. Contributions MUST be accepted under the same licence as the artefact contributed to.
+   - A separate copyright assignment MUST NOT be required.
+   - A contributor licence agreement MUST NOT be required.
+2. The project MUST NOT represent that it can relicense contributed code.
+   - It MUST NOT offer proprietary relicensing of any artefact containing contributions accepted under (1).
+3. The inbound terms MUST be stated in the repository, where a contributor encounters them before
+   contributing.
+
+#### Rationale
+
+(2) states a consequence rather than leaving it to be discovered: holding no assignable copyright means the
+project cannot relicense, so **open-core and sell-exceptions models are foreclosed**. Why that trade is worth
+making is argued in the accompanying architecture decision, along with what it costs.
+
+(3) is what makes (1) a term rather than an assumption. Terms a contributor never saw are not terms they
+accepted, and this is the only obligation here visible from outside the project."""

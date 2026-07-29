@@ -1,0 +1,52 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-EDIT"
+title = "Edit representation"
+kind = "normative"
+status = "active"
+
+[content]
+text = """
+An edit is stored as the gesture that produced it. This keeps an edit's size independent of its reach, makes
+it re-evaluable rather than baked, and — for the ordinary case — removes any need for per-point identity,
+which the source formats cannot supply.
+
+1. An edit MUST be a node in the document graph, evaluated as an ordinary operator subject to
+   [[RFC-0002:C-EXEC]] and [[RFC-0002:C-MEMORY]].
+2. The default form is a **region edit**: a spatial region, an optional attribute predicate, and an action.
+   - Its stored size MUST be independent of the number of points it affects.
+   - It MUST be expressible as a spatial query against a source's index, so that evaluating it touches only
+     the partitions its region intersects.
+3. A **point-set edit**, which enumerates the points it affects, MAY be provided for corrections no region
+   can express.
+   - It MUST declare a maximum number of points it may enumerate, and MUST refuse a selection exceeding it.
+   - That maximum MUST be reported to the user when a selection is refused.
+   - Its references and permitted graph position are governed by [[RFC-0005:C-IDENTITY]].
+4. The edit stack is an **ordered sequence**, not a set. Reordering two edits MUST be treated as changing the
+   result.
+   - Reordering MAY be treated as result-preserving only where the system applies a stated independence
+     test, and that test MUST be recorded with the reordering.
+5. An edit MUST NOT modify a source. Sources are read-only, and the edited state exists only as the document
+   graph applied to them.
+
+#### Rationale
+
+(2) is the whole economy of the design. A polygon of fifty vertices describes a selection of any size; it
+survives reprojection and resampling, where a list of point references would not; and because it is a
+spatial predicate it composes with the octree index rather than fighting it — editing is spatially sparse,
+and the index already exists to find sparse regions.
+
+(3) exists because the region form has a real gap: deselecting twelve stray returns among their neighbours is
+an enumeration, and no region tight enough to isolate them is meaningfully a region. Requiring the bound to
+be *declared and reported* rather than merely to exist is what makes the escape hatch checkable — an
+unstated bound is unfalsifiable, and the bound is what keeps the enumerated form from quietly becoming the
+default.
+
+(4)'s nested carve-out replaces an earlier "unless the system can demonstrate independence", which was
+unfalsifiable: any implementation could assert it had demonstrated something. Requiring a *stated* test that
+is *recorded* makes the claim auditable, and keeps reordering available where it is genuinely safe — two
+edits over disjoint regions with disjoint predicates commute, and that is worth being able to use.
+
+(5) is what makes the whole model non-destructive: the original survives every edit, so no edit sequence can
+lose data, and a remote source needs no write access."""

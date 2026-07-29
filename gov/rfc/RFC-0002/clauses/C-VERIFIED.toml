@@ -1,0 +1,36 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-VERIFIED"
+title = "What it means for an operator to be verified"
+kind = "normative"
+status = "active"
+
+[content]
+text = """
+C-ORIGIN 1 requires an operator to declare whether its conformance has been verified, and a field with no
+defined truth condition is not testable. What has to be checked is a property of the operator contract, so
+the definition belongs here rather than with release policy.
+
+1. An operator is **verified** when an assessor other than its author has confirmed each of:
+   - that its declared halo width is sufficient for its neighbourhood definition (C-HALO 3);
+   - that its peak memory conforms to its declared ceiling (C-MEMORY 1);
+   - that its declared attribute set is complete (C-PROJECTION 3);
+   - that any reduction it performs combines in partition order ([[RFC-0003:C-COMMIT]] 3);
+   - that it declares its output approximate where it diverges (C-APPROX 1).
+2. An operator that has not been assessed against every item of (1) MUST be recorded as unverified.
+   - Partial assessment MUST NOT be recorded as verification.
+
+#### Rationale
+
+The list is these five and not a general appeal to quality because each is exactly one of the obligations an
+operator can violate *silently* — an under-declared halo, an unbounded working set, an undeclared attribute
+read, an order-dependent reduction, an undisclosed approximation. Each fails without an error, which is why
+each needs a person rather than a test to attest it.
+
+The assessor-other-than-author requirement is what keeps the marker from being decorative. An author
+confident enough to publish an operator is confident enough to self-certify, and the field is only worth
+carrying if it records independent confirmation.
+
+(2) closes the gap that would otherwise swallow (1): a partially assessed operator is indistinguishable from
+a verified one unless partial assessment is explicitly not verification."""

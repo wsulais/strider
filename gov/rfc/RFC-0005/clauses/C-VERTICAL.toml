@@ -1,0 +1,42 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-VERTICAL"
+title = "Vertical datums"
+kind = "normative"
+status = "active"
+
+[content]
+text = """
+This clause exists because of one specific wrong number. Ellipsoidal height and orthometric height differ by
+tens of metres, varying geographically, so a vertical datum error shifts every height by a smooth plausible
+offset — no artefact, no error, and a timber inventory that is uniformly wrong.
+
+1. An operation whose result depends on height relative to a surface — height above ground, canopy metrics,
+   terrain models, volume — MUST fail unless every input's vertical reference is established and identical.
+   - Inputs whose vertical references differ MUST NOT be combined, assessed after any explicit conversion
+     under C-TRANSFORM 3.
+   - An input with no declared vertical reference MUST be treated as unestablished, never as agreeing with
+     the others.
+2. A result whose vertical reference cannot be established MUST NOT be presented as a height relative to any
+   surface.
+   - It MAY be presented as a raw coordinate value, provided the absence is stated.
+
+#### Rationale
+
+Failing is correct here in a way it rarely is. Every other category of coordinate error announces itself: a
+horizontal mismatch puts data in the wrong place, visibly. A vertical datum mismatch produces a correctly
+shaped surface at the wrong elevation, and every derived height inherits a constant that no inspection of
+the output reveals. The user cannot detect it, so the system must.
+
+The absent case is called out separately in (1) because it is the same failure by a shorter route. LAS files
+often declare no vertical reference at all, and treating absence as agreement is how a mismatch becomes
+invisible without anyone choosing to ignore it.
+
+(2)'s carve-out matters for usability: refusing to show a number at all would make the tool unusable on data
+users consider ordinary. Showing the coordinate while withholding the *interpretation* is the honest middle,
+and it is the same distinction [[RFC-0002:C-APPROX]] 3 draws between output and its presentation.
+
+This is the third obligation in this specification with the same shape: [[RFC-0002:C-HALO]] 2 forbids silent
+over-counting, [[RFC-0002:C-APPROX]] silent approximation, and this silent datum assumption. In each case the
+wrong answer is indistinguishable from the right one by inspection, so the discipline has to be structural."""

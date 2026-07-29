@@ -1,0 +1,165 @@
+#:schema ../schema/adr.schema.json
+
+[govctl]
+id = "ADR-0001"
+title = "Declared requirements over stream transforms"
+status = "accepted"
+date = "2026-07-29"
+refs = [
+    "ADR-0002",
+    "RFC-0002:C-APPROX",
+    "RFC-0002:C-EXEC",
+    "RFC-0002:C-HALO",
+    "RFC-0002:C-MEMORY",
+]
+
+[content]
+context = """
+The initial design sketch proposed one universal operator abstraction: an algorithm is a function
+from a stream of Arrow record batches to a stream of Arrow record batches. It composes cleanly, it
+is trivial to explain, and it is the shape most streaming frameworks expose. It cannot express the
+algorithms Strider exists to provide.
+
+Normal estimation, nearest-neighbour features, statistical outlier removal and cloth-simulation
+ground filtering all require points outside the batch being processed — a point at the edge of an
+octree node has neighbours in sibling nodes and in nodes at other levels of detail. A bare stream
+transform receives only what it is handed and has no way to ask for more, so it either produces
+silently wrong results along every partition boundary or the framework materialises the whole
+dataset, defeating the premise. Morphological ground filters have a different shape again: they need
+a coarse elevation surface over the whole area of interest before classifying a single point. That
+is two passes, and one stream transform expresses one.
+
+Compounding this, a bare Arrow batch is spatially anonymous — no bounding volume, no level of
+detail, no source partition identity. That is precisely the information a scheduler would need to
+supply the missing neighbours, so the abstraction discards the inputs to the decision it asks the
+scheduler to make.
+
+Cloth-simulation ground filtering on a very large COPC is the concrete workflow that motivated the
+project. If the core abstraction cannot express it, the result is a viewer with a pipeline metaphor.
+
+The decision had to be made before any public trait existed, because the operator interface is the
+one part of the design every algorithm, plugin and downstream user depends on."""
+decision = """
+Operators declare their input requirements without being executed, and the planner is obliged to
+satisfy them or refuse to run. The obligations are written in [[RFC-0002:C-EXEC]] (1, 2),
+[[RFC-0002:C-HALO]], [[RFC-0002:C-MEMORY]] and [[RFC-0002:C-APPROX]]; this ADR records only *why*.
+
+Why **declared requirements** over a bare stream transform or a closed set of operator kinds:
+
+- **It is the only option that expresses the target algorithms.** A transform cannot ask for
+  neighbours; a fixed kind cannot express an operator needing both a halo and two passes without
+  hand-decomposition by its author.
+- **Requirements compose; kinds enumerate.** Adding a dimension — replayability, a resolution floor
+  — extends the declaration additively, where an enum needs a new variant and a breaking change.
+- **Borrowed, not invented.** DataFusion's physical plan pairs an execute method returning a stream
+  with a declarative surface (required input distribution, required ordering, order maintenance,
+  plan properties) that optimiser passes use to insert satisfying operators. The pattern is adopted;
+  the types are not (ADR-0002).
+- **Pass count is a first-class requirement, not an implementation detail.** Two-pass operators need
+  the planner to arrange two traversals and the source to be replayable, which only a declaration
+  can communicate.
+
+Why spatial properties live on the **stage** rather than on tagged batches: batches stay plain Arrow
+and therefore directly consumable through the C data interface, Flight and Parquet writers, and the
+planner can reason statically instead of at runtime. Halo membership is the sole exception, being
+genuinely per-point, and is an ordinary boolean column rather than a wrapper.
+
+Why the operator set is **bounded**: any operator whose peak memory tracks dataset size is excluded,
+so bounded memory stays a property of the system rather than of a subset. Globally iterative
+algorithms — pairwise registration, global surface reconstruction, whole-cloud relaxation in its
+published form — are not admitted, and an explicitly unbounded extension point is deferred until
+there is evidence about what needs it."""
+consequences = """
+### Positive
+
+Neighbourhood algorithms become expressible, which is the point. The planner can skip redundant
+repartitioning it can prove unnecessary, and rejects an unsatisfiable pipeline before any bytes are read
+with a diagnostic naming the operator and requirement. Every operator is testable in isolation against a
+synthetic partition with a known halo. Bounded memory becomes a property of the system rather than a hope
+about its operators.
+
+### Negative
+
+Writing an operator costs more than writing a stream transform — the author must articulate what it needs,
+and an under-declared halo width is a correctness bug rather than a performance one. The planner acquires
+its own correctness burden, notably the obligation in [[RFC-0002:C-HALO]] 2 to keep an overlapping
+partitioning away from aggregation that assumes disjointness, a mistake that returns plausible wrong
+numbers rather than failing.
+
+Third parties cannot drop in an arbitrary stream transform: every operator must fit the declaration
+vocabulary, and extending that vocabulary is a public-contract change. Algorithms whose only known
+formulation is globally iterative are unavailable until the deferred extension point exists
+([[RFC-0002:C-MEMORY]] 3).
+
+### Neutral
+
+Streams are not self-describing — a batch handed to an external consumer carries no spatial context. This
+is neither gain nor loss but a relocation: the context describes how the data was obtained rather than the
+points, so it belongs to the stage that produced it.
+
+Partition-wise approximations remain permitted, subject to disclosure under [[RFC-0002:C-APPROX]]. Cloth
+simulation ships tile-wise with documented seam behaviour or does not ship — a change in how such
+algorithms arrive, not in whether they can.
+
+Reversal cost is low in the direction of widening and prohibitive in the direction of abandonment.
+Extending the declaration vocabulary is additive and cheap; replacing declared requirements with opaque
+transforms would invalidate every operator and the planner at once."""
+
+[[content.alternatives]]
+text = "Declared requirements: an operator states the partitioning, halo width, attributes and pass count it needs; the planner inserts satisfying operations or refuses to run"
+status = "accepted"
+pros = [
+    "Expresses neighbourhood algorithms — the ones that differentiate a processing tool from a viewer",
+    "Planner can prove a requirement already satisfied and skip a redundant repartition",
+    "Unsatisfiable pipelines are rejected before any bytes are read, naming the unmet requirement",
+    "Requirements compose by conjunction and extend additively, unlike a closed set of kinds",
+    "Proven shape: how DataFusion's physical planner satisfies distribution and ordering requirements",
+]
+cons = [
+    "Writing an operator costs more than writing a stream transform",
+    "An under-declared halo width is a silent correctness bug, not a performance bug",
+    "The planner becomes a real component with its own correctness burden",
+]
+
+[[content.alternatives]]
+text = "Bare stream transform: every operator is a function from a stream of Arrow batches to a stream of Arrow batches"
+status = "rejected"
+pros = [
+    "Trivially composable, trivially explained, smallest possible public surface",
+    "Matches the shape most streaming frameworks already expose",
+]
+cons = [
+    "Cannot express any neighbourhood algorithm: no way to ask for points outside the batch",
+    "Cannot express two-pass algorithms such as morphological ground filters",
+    "Produces silently wrong results along every partition boundary rather than failing",
+]
+rejection_reason = "It cannot express the algorithms the project exists to provide. Normals, outlier removal, kNN features and CSF all need points beyond the batch, and an opaque transform gives the scheduler no way to learn that. The failure mode is not an error but wrong answers at every seam."
+
+[[content.alternatives]]
+text = "Closed set of operator kinds: a fixed enumeration of map, local-with-halo, reduce and broadcast that the engine knows how to schedule"
+status = "rejected"
+pros = [
+    "Engine can always plan, having a finite set of shapes to handle",
+    "Memory bounded by construction for every kind; exhaustively documentable",
+]
+cons = [
+    "Every new requirement dimension — replayability, ordering, resolution floor — needs a new variant",
+    "An operator needing two dimensions at once has no kind and must be hand-decomposed",
+    "Widening the enum is a breaking change to the public contract",
+]
+rejection_reason = "Fixed kinds are not composable; declared requirements are. An operator needing both a halo and two passes has no kind. Requirements compose by conjunction and extend additively, delivering the same scheduling power without the enum's versioning cost. This was the initially proposed design, superseded on comparison with DataFusion's requirements surface."
+
+[[content.alternatives]]
+text = "Tagged chunk: attach bounding volume, level of detail, source partition identity and halo width to each batch as a wrapper struct on the data path"
+status = "rejected"
+pros = [
+    "Every stream is self-describing; a batch carries its spatial context anywhere it goes",
+    "No separate planner state to keep consistent with the data",
+]
+cons = [
+    "Breaks direct Arrow interoperability: every external consumer must unwrap first",
+    "The wrapper becomes part of the permanent public contract",
+    "Allocates per-batch metadata for information that is constant per stage",
+    "Moves planning to runtime, so unsatisfiable pipelines fail late instead of at plan time",
+]
+rejection_reason = "It destroys the property that makes Arrow worth choosing: batches must be directly consumable through the C data interface, Flight and Parquet writers with no conversion. Spatial context describes how data was obtained, not the points, so it belongs on the stage. Halo membership is the one genuine exception, being per-point, and is carried as an ordinary boolean column instead."

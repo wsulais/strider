@@ -1,0 +1,45 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-CACHE"
+title = "Cache layering and keying"
+kind = "normative"
+status = "active"
+
+[content]
+text = """
+A cache is a derived artefact and never a source of truth. Everything below follows from that, plus the
+observation that the host interfaces already provide everything a cache needs — so nothing here widens the
+privilege a library crate holds.
+
+1. A cache MUST NOT be authoritative.
+   - Every cache entry MUST be re-derivable from authoritative state and discardable at any time without
+     loss. This generalises [[RFC-0007:C-BAKE]] 4 from the consolidated edit overlay to every cache.
+2. A cache MUST obtain its persistence through the storage interface and its inputs through the retrieval
+   interface (C-HOST 1 and 2).
+   - It MUST NOT require a hierarchical namespace or path traversal.
+   - It MUST NOT require seekable handles.
+   - It MUST NOT require in-place modification of a stored entry.
+3. A cache of byte ranges MUST be an implementation of the retrieval interface rather than a separate
+   concept.
+   - A caching and a non-caching source MUST be interchangeable to their consumer.
+4. A cache of decoded batches MUST be keyed per attribute.
+   - It MUST NOT be keyed on the projection requested by any particular consumer.
+
+#### Rationale
+
+(2) enumerates four separate prohibitions rather than stating "use the host interfaces", because each names a
+capability a cache implementation would plausibly reach for and each is independently checkable. Why the
+narrow surface is preferable to a filesystem abstraction is a comparative question, argued in the
+accompanying architecture decision rather than here.
+
+(3) follows from C-HOST 2's shape: retrieval defined as explicit offset and length makes a cache an
+implementation of that interface rather than a layer beside it, so coalescing logic stays portable while the
+backing store remains the host's.
+
+(4) exists because [[RFC-0002:C-PROJECTION]] would otherwise force a choice between fragmenting the cache per
+distinct projection and caching whole records, which discards the benefit projection exists for. Per-attribute
+keying avoids both; why that beats the alternatives is in the accompanying architecture decision.
+
+Fingerprint recording is not restated here: [[RFC-0005:C-BINDING]] 5 already requires every derived artefact
+to carry the source version it was built from, and a cache entry is one."""

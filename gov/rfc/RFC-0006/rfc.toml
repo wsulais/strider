@@ -1,0 +1,35 @@
+#:schema ../../schema/rfc.schema.json
+
+[govctl]
+id = "RFC-0006"
+title = "Rendering: component boundaries, surface and overlay"
+version = "0.1.0"
+status = "draft"
+phase = "spec"
+owners = ["@wael"]
+created = "2026-07-29"
+updated = "2026-07-29"
+tags = [
+    "architecture",
+    "out-of-core",
+    "gui",
+]
+
+[[sections]]
+title = "Summary"
+clauses = ["clauses/C-OVERVIEW.toml"]
+
+[[sections]]
+title = "Specification"
+clauses = [
+    "clauses/C-LAYERING.toml",
+    "clauses/C-RENDER.toml",
+    "clauses/C-TOOLKIT.toml",
+    "clauses/C-SURFACE.toml",
+    "clauses/C-OVERLAY.toml",
+]
+
+[[changelog]]
+version = "0.1.0"
+date = "2026-07-29"
+notes = "Initial draft"

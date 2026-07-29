@@ -1,0 +1,13 @@
+#:schema ../schema/guard.schema.json
+
+[govctl]
+id = "GUARD-COMMITTED-RUN-IS-BIT-IDENTICAL-ON-REPETITION"
+title = "committed run is bit-identical on repetition"
+refs = [
+    "RFC-0001:C-CONFORMANCE",
+    "RFC-0003:C-COMMIT",
+]
+
+[check]
+command = "devenv shell -- cargo test --release --test conformance_determinism -- --nocapture"
+timeout_secs = 1800

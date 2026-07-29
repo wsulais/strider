@@ -1,0 +1,318 @@
+# Domain Context — ubiquitous language
+
+**Project: Strider** — a Rust + Qt6 workbench and crate ecosystem for out-of-core
+point cloud processing. (Named for the gait: you *stride over* terrain rather than
+sink into it, which is what out-of-core processing does to a dataset. Naming
+analysis: `docs/naming/pointcloud-naming-2026-07-29.md`. Fallback candidate was
+PointFlow.)
+
+The shared vocabulary for the workbench. **Definitions only — zero obligations.**
+Normative rules live in `gov/rfc/` clauses; the *why* behind big choices lives in
+`gov/adr/`. Where a definition here and a clause disagree, the clause governs
+(`RFC-0001:C-CONFORMANCE` 1) and this file is wrong.
+
+How those artifacts are written is the `grill-gov` skill; what this repo adds on top
+is `docs/governance-conventions.md`.
+
+Scope today: **forestry LiDAR**, and one delivery target (desktop). The model is
+kept domain- and format-generic — COPC is one source adapter among several, and
+nothing in the vocabulary presumes trees — so bathymetry, urban survey, and
+industrial scanning can be added without reshaping it.
+
+## Core premise
+- **Out-of-core** — processing a dataset larger than available memory by reading
+  and discarding bounded portions of it, never materialising the whole. Strider's
+  reason to exist. Contrast **in-core**, where the cloud is loaded once and held
+  as an object: the model CloudCompare and its generation assume.
+- **Bounded memory** — the property that an operation's peak memory is a function
+  of its working-set size, not of the dataset's point count. The claim the whole
+  project rests on (`RFC-0002:C-MEMORY`).
+- **Streaming** — used only for *how data moves* (a stream of batches). Never used
+  to mean out-of-core; a viewer can stream without processing out-of-core, which
+  is precisely the QGIS/CloudCompare gap Strider fills.
+
+## Data
+- **Point** — one measurement: a position plus attributes. Addressable only by
+  *point reference*, and only where that is permitted.
+- **Batch** — an Arrow record batch of points, columnar. The unit of data movement
+  between operators. Always **plain Arrow**, never wrapped
+  (`RFC-0002:C-EXEC` 3).
+- **Attribute** — one column of a batch. Chosen over *field* (Arrow's word for the
+  schema entry) and *dimension* (PDAL's word for the same idea), both of which are
+  ambiguous here. *Dimension* is reserved for spatial axes.
+- **Node** — a cell of a source's spatial hierarchy; in practice an octree node of
+  a COPC. Nodes exist in the **source**; partitions exist in the **pipeline**.
+- **Source** — anything the spatial access layer can read: local or remote COPC,
+  Parquet/GeoParquet, E57, LAS/LAZ. Formats are adapters; none is privileged
+  internally.
+
+## Execution
+- **Spatial access layer** — turns a spatial request (a volume, at a level of
+  detail) into a stream of batches by traversing a source's index. Owns index
+  traversal, the node cache, and level of detail. Knows nothing of operators. The
+  renderer talks to it directly (`RFC-0006:C-RENDER`).
+- **Operator** — one processing step: crop, reproject, estimate normals, classify
+  ground. Consumes batches, produces batches, and **declares what it needs**
+  before running. Not called a *filter* (which in PDAL means only the middle of a
+  pipeline) nor an *algorithm* (which names the mathematics, not the schedulable
+  unit).
+- **Requirement** — what an operator states it needs from its input, before
+  executing: partitioning, minimum halo width, attributes read, pass count. The
+  planner's whole job (`RFC-0002:C-EXEC` 1).
+- **Planner** — reads requirements, inserts the repartitioning, halo construction
+  or summary passes that satisfy them, and refuses to run a pipeline it cannot
+  satisfy. **Not a query optimiser**: it satisfies requirements, it does not
+  reorder for cost. Drift toward relational algebra here is the documented failure
+  mode of `ADR-0002`.
+- **Pipeline** — a composed sequence of operators, plus the source it reads.
+- **Stage** — one position in a planned pipeline. A stream's spatial properties —
+  bounding volume, level of detail, source node identity, halo width — belong to
+  the *stage*, not to the batches flowing through it (`RFC-0002:C-EXEC` 4).
+- **Partition** — the unit of work the planner hands an operator: a bounded region
+  of space at one level of detail. Usually aligned to source nodes, not required
+  to be. A *node* is what the file has; a *partition* is what the planner decided
+  to process together.
+- **Pass** — one traversal of the input by an operator. Two-pass operators (build a
+  summary, then apply it) are the shape of morphological ground filters and of
+  height above ground.
+- **Summary** — the small, bounded result of reducing a whole input: a
+  minimum-elevation raster, a histogram, a decimated index. Bounded independently
+  of input size, which is what makes reduce-then-apply admissible out-of-core.
+
+## Neighbourhoods
+- **Halo** — points supplied to a partition from *outside* its bounds, so a
+  neighbourhood computation near the boundary sees the neighbours a whole-dataset
+  run would have given it. Called *ghost points* in the scientific-computing
+  literature; Strider says **halo** for the region and **halo point** for a member,
+  and avoids "ghost" as a noun.
+- **Halo width** — the distance beyond a partition's bounds from which halo points
+  are drawn. Declared by the operator, supplied by the planner. Under-declaring it
+  is a correctness bug, not a performance bug (`RFC-0002:C-HALO` 3).
+- **Core point** — a point belonging to the partition itself rather than its halo.
+  Operators read both and emit only core points, which is what makes a partitioned
+  run's point count equal a whole-dataset run's (`RFC-0002:C-HALO` 1).
+- **Disjoint partitioning** — one where every point belongs to exactly one
+  partition. Aggregation is correct *only* over a disjoint partitioning; a halo
+  partitioning is deliberately not one, and mixing them silently over-counts
+  (`RFC-0002:C-HALO` 2).
+
+## Resolution & honesty
+- **Level of detail** (*LOD* in code, spelled out in prose) — how much of a
+  region's density is requested; the depth in the source's hierarchy. Rendering
+  asks for enough for the viewport; processing usually asks for full resolution.
+- **Approximate** — output differing from what the same operation would produce
+  over the whole dataset at full resolution. Permitted; concealing it is not, and the
+  *kind* of divergence must be named, not just its presence (`RFC-0002:C-APPROX`).
+- **Exact** — output identical to the whole-dataset formulation. The default
+  expectation, and **lost by composition**: an exact aggregate over approximate
+  input is approximate.
+- **Resolution floor** — the coarsest level of detail an evaluation may draw from.
+  One of the two reductions, and declared separately from the other.
+- **Extent** — the region an evaluation covers. The *other* reduction. Restricting
+  it is exact **only** where every operator declares zero halo and a single pass;
+  otherwise it produces a moving artefact at the boundary (`RFC-0003:C-RESOLUTION`
+  2).
+- **Preview** — an evaluation reduced in either respect. Never authoritative, never
+  reusable as output, and not required to be reproducible — but must not be visibly
+  unstable for a stationary camera.
+- **Committed run** — full resolution over a declared extent, **bit-identical** on
+  repetition given the same graph, source fingerprints, and recorded configuration.
+  What a delivered result comes from. Export always routes through one.
+- **Partition order** — the fixed total order (Morton over node keys) in which a
+  committed run combines reductions, *never* completion order. What makes
+  bit-identity achievable without a new sequencing concept (`RFC-0003:C-COMMIT` 3).
+- **Adaptive partitioning** — the cache reshaping partitions to match how a user is
+  working: merging while orbiting one tree, subdividing for finer working sets.
+  **Permitted and wanted for preview and rendering; forbidden for committed runs**,
+  because an adaptive partition has no stable identity and identity is what fixes
+  reduction order (`RFC-0003:C-PARTITIONING`). Never *subdivide* to get neighbours —
+  that is the planner's job from declared halo width.
+- **Projection** — the set of attributes a pipeline actually reads, computed from
+  operators' declarations and pushed into the source. Free, since `C-EXEC` 1 already
+  requires the declaration. Must not change results — which makes it a *test* for
+  operators reading attributes they never declared. Gain over LAZ is bounded to
+  materialisation, not I/O: a compressed chunk is a unit, so the full columnar win
+  needs a columnar format.
+
+## Editing
+- **Document graph** — the authoritative structure describing what the data *is*:
+  the source, the operators applied to it, and the edits. Everything a user sees is
+  derived from it; nothing else is authoritative (`RFC-0007:C-EXTRACT` 1). Borrowed
+  in spirit from Graphite, where the document *is* the graph.
+- **Edit** — a user correction, stored as **the gesture, not the points**. A lasso
+  over 40 000 points is a polygon, a predicate and an action — about a kilobyte,
+  whatever it touched.
+- **Region edit** — the default form: a spatial region + optional attribute
+  predicate + action. Needs no point identity, and composes with the octree index
+  because it *is* a spatial predicate.
+- **Point-set edit** — the escape hatch: an explicit enumeration, size-capped, for
+  corrections no region expresses (the twelve stray returns on a wire). Requires
+  point identity, and is deliberately not the default (`RFC-0007:C-EDIT` 3).
+- **Edit stack** — the ordered sequence of edits. **Ordered, not a set**: reordering
+  changes the result unless independence can be shown.
+- **Effective edit set** — the edits that apply to one partition, found by spatial
+  query over the stack's index rather than by replaying the stack.
+- **Layer stack** — the user-facing projection of the document graph. Users see
+  layers and a history list; the graph is underneath. Graphite's transferable
+  lesson — foresters are not node-graph people.
+
+## Render synchronisation
+- **Render state** — the derived, GPU-side representation the renderer draws from.
+  Never authoritative, and never written back to the document (`RFC-0007:C-EXTRACT`
+  2). Bevy's *render world*.
+- **Extract** — the single synchronisation point where document and render state are
+  both accessed. **Metadata only** — which partitions are visible, which edits apply
+  — never point bytes and never I/O, because it is the one place nothing may block.
+  Bevy's *Extract*, with the deliberate difference that it copies *plans* rather
+  than values, since the data is not resident.
+- **Retained** — describes render state that persists across frames and is
+  invalidated incrementally. Contrast a general-purpose engine, which clears render
+  state each frame; here that would mean re-uploading a viewport of points per
+  frame, the exact cost the project exists to avoid.
+- **Bake** — transparent consolidation of the edit stack's *executable*
+  representation when a region's chain gets expensive. A cache: re-derivable from
+  history, discardable at any time, and forbidden from changing results.
+- **History** — the append-only record of every edit, including undone and
+  superseded ones. Never collapsed by baking or eviction. Distinct from *undo
+  state*: undo needs the previous state, provenance needs the record that a rejected
+  state existed.
+
+## Identity
+- **Point reference** — how an individual point is named: `(source, version
+  fingerprint, node key, index within node)`. A **position in a versioned
+  container**, not a minted id. Free, needs no sidecar, and is what both QGIS
+  (`sub-index, node id, index`) and CloudCompare (array index) use.
+- **Version fingerprint** — a streaming BLAKE3 digest binding a reference to the
+  exact source bytes it was taken against: header + index hierarchy where the format
+  has one, whole file where it doesn't (LAS). Not a security property — a content
+  digest, and a persisted compatibility surface (`RFC-0005:C-BINDING`).
+- **Stale reference** — a reference whose fingerprint no longer matches its source.
+  Never migrated, never re-resolved by proximity; the document opens **read-only**
+  and names the affected edits.
+- **Source substitution** — replacing a source in place with a reprocessed file.
+  Every node key and index still resolves and now means *different points*. The
+  hazard non-destructive editing creates and destructive editors cannot have, since
+  for them the file *is* the state.
+
+## Presentation
+- **Host surface** — the opaque native drawing target the renderer is *given*. The
+  renderer creates no windows, owns no thread, and never learns which toolkit
+  produced it — the same arrangement `C-HOST` applies to storage, extended to
+  presentation (`RFC-0006:C-SURFACE`).
+- **Direct presentation** — the renderer presents to the surface itself. Route taken
+  first: zero graphics interop, and a browser canvas yields the same kind of handle.
+- **Offscreen compositing** — the renderer draws into a target the *host* composites
+  into its scene graph. Admitted by the same contract from the start, adopted when
+  depth-insensitive overlay is wanted. Needs per-backend texture interop, which is
+  why it is second.
+- **Depth-dependent content** — anything whose correctness relies on depth against
+  the cloud: measurements anchored to points, in-scene selection geometry. **Must be
+  renderer-drawn** — composited content carries no depth and floats in front of
+  geometry it should be behind (`RFC-0006:C-OVERLAY` 1).
+- **Depth-insensitive content** — interface chrome with no spatial relationship to
+  the scene. May be composited by the host. The only thing overlay actually buys.
+- **Toolkit confinement** — Qt exists only in the application crate. Driven by
+  `C-LICENSE` 4 (Qt is LGPL-3/GPL-3), and holds even against a commercial Qt licence,
+  which would remove the obligation for *this* project while leaving every adopter
+  bound (`RFC-0006:C-TOOLKIT` 2).
+
+## Coordinates
+- **CRS** — a coordinate reference system, carried by every source and stage and
+  **opaque** to library crates: comparable for identity, never parsed. Interpreting
+  one needs a transformation database a library crate may not open
+  (`RFC-0005:C-CRS` 2).
+- **Vertical reference** — the surface heights are measured from. Ellipsoidal and
+  orthometric differ by *tens of metres*. Mismatched or absent → any
+  height-above-a-surface operation **fails** (`RFC-0005:C-VERTICAL`). Absence is
+  never treated as agreement.
+- **Transform capability** — host-supplied coordinate transformation, injected like
+  storage and retrieval. PROJ is MIT so licensing permits it, but it links SQLite and
+  reads a database from disk, so it lives in the application only.
+- **Query-side transformation** — the default and the cheap one: transform the *query
+  bounds* into the source's CRS, leave the points alone. Transforming points is
+  per-point trigonometry over billions, and requantises the scaled integers that make
+  exact accumulation and stable references possible.
+- **Reference backend** — the designated authoritative transformation
+  implementation. A committed run involving a **datum shift** must use it; other
+  transformations may use any backend but must record which one, at what version,
+  with which grid database (`RFC-0005:C-BACKEND`).
+- **Datum shift** vs **projection** — a projection is closed-form, so correct
+  implementations agree to float precision. A datum shift depends on grid files and
+  pipeline selection, so correct implementations can differ by decimetres. Hence one
+  rule for each, not one rule for both.
+
+## Extension
+- **Operator origin** — where a registered operator came from, and whether its
+  conformance was **verified by someone other than its author**. Recorded per
+  committed run, and unverified output is surfaced to the user the same way
+  approximate output is (`RFC-0002:C-ORIGIN`).
+- **Expression** — user-supplied logic that is a *pure function of one point's
+  attributes*: no I/O, no state, no other points. **Safe by construction** — every
+  contract it could break is unreachable from it, not merely checked. Must be
+  evaluable vectorised over Arrow arrays; per-row interpretation is unusable at
+  billions of points.
+- **Serialised document graph** — the pipeline description. Not a separate format:
+  `C-PROVENANCE` 2 already requires the graph to be recorded, so the record *is* the
+  pipeline (PDAL's arrangement, at no cost).
+- **No plugin mechanism** — an operator is written in-tree or by a consumer building
+  against the published crates. Runtime-loaded native libraries are excluded: they
+  have ambient access (breaking `C-HOST`), don't exist on constrained targets
+  (breaking `C-PORT-GATE`), and a fault takes the session with it. Sandboxed WASM
+  operators are the intended eventual answer, with conditions already stated.
+
+## Releases
+- **Committed vs claimed** — a release asserts a property only once its verification
+  passes. Bounded memory, halo correctness, and bit-identical repetition are the three
+  claims that fail *invisibly*, so each is a gate (`RFC-0001:C-CONFORMANCE`).
+- **Halo verification** — partitioned output compared against output computed with the
+  input in a **single partition**. For a non-approximate operator these must be
+  *identical*: a sufficient halo makes partitioning exactly lossless, so any
+  difference means the width is under-declared. Not a tolerance. The one test that
+  cannot be faked.
+- **Refusal half / capability half** — every honesty obligation has both. Refusing a
+  mismatched CRS or vertical datum is conformant *on its own*, so a release can be
+  honest without being complete: "transformation is not implemented" is a position,
+  not a gap.
+
+## Caching
+- **Four caches, not one** — byte-range (fingerprint + offset), node/decoded
+  (fingerprint + node + attribute), bake overlay (fingerprint + edit-stack prefix),
+  and render state (partition + effective-edit-set version). Different keys,
+  lifetimes and consequences; conflating them would give the least trustworthy the
+  reach of the most.
+- **Cache as decorator** — a byte cache *is* an implementation of the retrieval
+  interface wrapping another, not a layer beside it. Because retrieval is explicit
+  offset+length with multi-range batching, coalescing and dedup are portable logic
+  while the backing store stays host-supplied (`RFC-0004:C-CACHE` 3).
+- **Per-attribute keying** — decoded entries are keyed per attribute, never per
+  requested projection. Otherwise `C-PROJECTION` forces a choice between fragmenting
+  the cache per projection and caching whole records, which throws away the point of
+  projection.
+- **Not a VFS** — deliberately. Paths, handles, seek and permissions are *more*
+  privilege than caching needs. A keyed store with no paths has no path traversal; a
+  write-once store has no TOCTOU. The narrowness **is** the security property.
+- **Entry integrity** — every entry carries a digest of its own content. Verified
+  where it feeds a **committed run**, optional for preview. Failure means
+  *discard and re-derive*, never an error — always possible, since no cache is
+  authoritative. Detection, not prevention: an altered entry may not silently reach a
+  delivered result (`RFC-0004:C-INTEGRITY`).
+
+## Host & platform
+- **Host** — whoever supplies a library crate its environment capabilities. The
+  desktop application is one host; a server or a browser page would be others.
+  Library crates never reach for capabilities ambiently (`RFC-0004:C-HOST`).
+- **Storage interface** — host-supplied persistent byte storage for spill, cache,
+  and working sets. Keyed, not hierarchical; write-once, not modify-in-place —
+  shaped by the weakest plausible backend rather than by a filesystem.
+- **Retrieval interface** — host-supplied byte-range reads, expressed as explicit
+  offset and length (never a seekable handle) and batchable into one multi-range
+  request.
+- **Spill** — moving part of a working set to the storage interface to stay within
+  the memory ceiling. A permitted strategy, not a fallback from failure.
+
+## Unresolved
+
+Nothing outstanding from the architecture grill — all fourteen questions in
+`.govctl/grill/strider-architecture/state.toml` are resolved. New terms land here
+first when the next design question opens one.
+

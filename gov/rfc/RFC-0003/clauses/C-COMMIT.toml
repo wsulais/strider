@@ -1,0 +1,53 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-COMMIT"
+title = "Committed runs"
+kind = "normative"
+status = "active"
+
+[content]
+text = """
+A committed run produces what a forester delivers and may be billed against. [[RFC-0007:C-PROVENANCE]]
+exists so such an output can be defended to a third party, and a trail that replays to a slightly
+different number does not do that job. Determinism is what makes the provenance guarantee mean something.
+
+1. A committed run MUST evaluate at full resolution over its declared extent, and MUST NOT be reduced in
+   either respect (C-RESOLUTION 1).
+2. A committed run MUST be **bit-identical** across repetitions, given:
+   - the same document graph;
+   - the same source version fingerprints ([[RFC-0005:C-BINDING]]);
+   - the same recorded evaluation configuration.
+3. Reductions within a committed run MUST combine in a fixed total order derived from partition identity.
+   - They MUST NOT combine in order of completion.
+   - The number of threads available MUST NOT affect the result.
+4. The evaluation configuration a committed run used MUST be recorded with its output.
+   - The record MUST include the partition size and any other parameter affecting reduction order.
+   - It MUST include the identity and version of every transformation backend consulted
+     ([[RFC-0005:C-BACKEND]] 3).
+   - It MUST include the origin and verification status of every operator evaluated
+     ([[RFC-0002:C-ORIGIN]] 2).
+5. Where an aggregate can be computed in exact integer arithmetic, it SHOULD be, in preference to
+   floating-point accumulation.
+6. Conformance to (2) MUST be verified by executing the same committed run twice against the same sources
+   and configuration and comparing outputs for bitwise equality.
+
+#### Rationale
+
+(3) says *partition identity* rather than naming an order because the order is already implied: partitions
+are identified by spatial index node keys, so a Morton ordering over those keys is a fixed total order the
+system possesses without inventing a sequencing concept. What the obligation costs — partial results cannot
+be folded as they land, so a bounded window must be buffered — is the reason it is stated as a MUST rather
+than left to implementations, and why the alternative was weighed rather than assumed.
+
+(2) and (4) together are an honest guarantee rather than an overreaching one. Bit-identical results across
+*different* partition sizes would require order-independent accumulation everywhere, a far larger
+commitment; instead the configuration is recorded, so a result is reproducible by anyone who repeats it as
+it was run. Recording rather than fixing the configuration also keeps the system tunable without weakening
+the promise, and it is what makes (6) meaningful — without a recorded configuration there is nothing to
+repeat *against*.
+
+(5) is available more often than it appears: LAS and COPC store coordinates as scaled integers, so
+aggregates over positions can frequently be accumulated exactly, which makes them independent of reduction
+order and therefore of configuration as well. It is a SHOULD because it does not generalise — an arbitrary
+floating-point attribute has no such representation."""

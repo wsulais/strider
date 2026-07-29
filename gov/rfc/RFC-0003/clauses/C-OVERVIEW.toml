@@ -1,0 +1,27 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-OVERVIEW"
+title = "Overview and scope"
+kind = "informative"
+status = "active"
+
+[content]
+text = """
+The same document graph is evaluated for a viewport that needs an answer this frame and for a result a
+forester delivers to a client. Those two need different guarantees, and conflating them is how a
+camera-dependent number reaches a report.
+
+**Scope** — the two independent ways an evaluation may be reduced; what a preview may and may not be
+used for; what reproducibility a committed run guarantees; and when partitioning may adapt to how a
+user is working.
+
+**Out of scope** — the operator model and the memory ceiling ([[RFC-0002]]). Camera and viewport
+behaviour, and the render synchronisation boundary ([[RFC-0007:C-EXTRACT]]). Which operators exist.
+
+Much of the ground is held before this RFC starts. Level of detail is a stage property the planner can
+see ([[RFC-0002:C-EXEC]] 4), render state is derived and never authoritative
+([[RFC-0007:C-EXTRACT]] 1), and any result diverging from the whole-dataset full-resolution answer must
+already declare itself approximate ([[RFC-0002:C-APPROX]]). So a camera cannot change a result, and a
+preview is already obliged to admit what it is. What remains is to separate the two reductions people
+conflate under "preview", and to say what a committed run promises."""

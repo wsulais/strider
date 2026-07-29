@@ -1,0 +1,47 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-RESOLUTION"
+title = "Reduced evaluation"
+kind = "normative"
+status = "active"
+
+[content]
+text = """
+"Preview" conflates two reductions that fail in entirely different ways. Reducing **resolution** over the
+full extent yields a noisier version of the right answer, degrading smoothly. Restricting **extent** yields
+an answer that is exact inside the region and structurally wrong outside it — a global reduce then
+summarises a subset, and a restricted extent has no halo at its boundary, so every neighbourhood operator
+is wrong exactly where the user is looking.
+
+1. An evaluation MUST declare its reductions separately:
+   - its **resolution floor** — the coarsest level of detail it may draw from;
+   - its **extent** — the region it covers.
+   - The resolution floor MUST NOT be inferred from the extent, and the extent MUST NOT be inferred from
+     the resolution floor.
+2. An evaluation MAY be restricted to less than the full extent only if every operator in the pipeline
+   declares zero halo width and a single pass ([[RFC-0002:C-EXEC]] 1).
+   - Otherwise it MUST cover the full extent of its input, at whatever resolution floor applies.
+3. An evaluation reduced in either respect MUST declare its output approximate under
+   [[RFC-0002:C-APPROX]] 1.
+   - The declared kind of divergence MUST distinguish reduced resolution from restricted extent, and MUST
+     name both where both apply.
+
+#### Rationale
+
+(2) is derived rather than invented: the declarations required by [[RFC-0002:C-EXEC]] 1 already carry
+exactly the information needed to decide it. An operator with zero halo and one pass is
+position-independent, so restricting its extent is not an approximation at all — cropping, attribute
+filtering and reprojection are exact over any subregion. An operator with a halo has no neighbours beyond
+the boundary, and a two-pass operator's summary would be built from a subset; in both cases restriction
+changes the answer rather than merely reducing it.
+
+The practical consequence is worth stating plainly, because the cheap implementation is the wrong one.
+Clipping to the visible region is the obvious way to make a preview fast, and for a ground classifier it
+produces a hard artefact along the edge of the view that *moves as the camera moves*. A user reads that as
+a defect in the software, not as a limitation of previewing — and they are close to right, because nothing
+warned them.
+
+(3) supplies the taxonomy that [[RFC-0002:C-APPROX]] 1 requires a kind to be drawn from. The two kinds are
+not interchangeable: reduced resolution is noise a user can reason about and compensate for, while
+restricted extent is a localised error at a known place that must not be trusted at all."""

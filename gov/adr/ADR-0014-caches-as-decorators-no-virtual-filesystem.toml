@@ -1,0 +1,191 @@
+#:schema ../schema/adr.schema.json
+
+[govctl]
+id = "ADR-0014"
+title = "Caches as decorators, no virtual filesystem"
+status = "accepted"
+date = "2026-07-29"
+refs = [
+    "ADR-0004",
+    "RFC-0002:C-PROJECTION",
+    "RFC-0003:C-PREVIEW",
+    "RFC-0004",
+    "RFC-0004:C-CACHE",
+    "RFC-0004:C-HOST",
+    "RFC-0004:C-INTEGRITY",
+    "RFC-0005:C-BINDING",
+    "RFC-0006:C-LAYERING",
+    "RFC-0007:C-BAKE",
+    "RFC-0007:C-INVALIDATION",
+]
+
+[content]
+context = """
+Asking where caching lives exposed that the question has no single answer. Four caches exist with different
+keys, lifetimes and consequences: raw byte ranges keyed by source and offset; decoded batches keyed by node;
+the consolidated edit overlay from [[RFC-0007:C-BAKE]]; and retained render state under
+[[RFC-0007:C-INVALIDATION]] 1. Treating them as one facility would give the least trustworthy of them the reach of
+the most.
+
+Placement followed from existing obligations rather than needing new ones. Byte-range and node caches belong
+to the spatial access component, which already owns index traversal; the baked overlay belongs where edits are
+evaluated; render state belongs to the rendering component, which [[RFC-0006:C-LAYERING]] 3 keeps downstream
+of both.
+
+The proposal that caching needs a virtual filesystem to handle constrained hosts and reduce attack surface
+turned out to invert the actual relationship. A filesystem abstraction means paths, directory traversal,
+seekable handles and permissions — strictly *more* authority than caching requires. The two host interfaces
+already in force are the minimal capability set: read a byte range from a named source, and put, get or delete
+by opaque key with no in-place modification ([[RFC-0004:C-HOST]] 1 and 2). That narrowness is itself the
+security property, since a keyed store with no paths has no path to traverse and a write-once store cannot be
+modified between check and use. The decision behind [[RFC-0004]] had already recorded growth toward a general
+filesystem as a drift to watch, so this was a case of the governance catching the question.
+
+A structural observation simplified the byte cache: because retrieval is defined as explicit offset and length
+with batched multi-range support, a cache *is* an implementation of that interface wrapping another, not a
+layer beside it. Request coalescing and deduplication become portable logic while the backing store stays
+host-supplied.
+
+[[RFC-0002:C-PROJECTION]] creates a keying problem. An entry decoded for the
+attributes one pipeline reads cannot serve a pipeline reading one further attribute, so keying on requested
+projection fragments the cache per distinct projection, while keying on the whole record discards the benefit
+projection exists for.
+
+The genuine gap was integrity rather than capability. [[RFC-0005:C-BINDING]] 5 detects a *stale* entry, not a
+*modified* one, and a cache in shared storage can be altered by something other than this software. The
+consequences are not uniform: a tampered baked overlay would change a delivered result while
+[[RFC-0007:C-BAKE]] 2 asserts baking cannot change results, and a corrupted cached byte range feeding a
+committed run changes output silently."""
+decision = """
+Caches are decorators over the host interfaces already specified, keyed per attribute, and integrity-verified
+only where an entry contributes to a committed run. The obligations are written in
+[[RFC-0004:C-CACHE]] and [[RFC-0004:C-INTEGRITY]]; this ADR records only *why*.
+
+Why there is **no virtual filesystem**, which was the proposal and is the wrong direction:
+
+- **It would increase privilege in the name of reducing it.** Caching needs to read byte ranges and to put and
+  get opaque keys. A filesystem abstraction adds paths that can be traversed, handles that can be raced, and
+  permissions that can be misconfigured — authority the function never uses.
+- **The narrowness is the security property.** A keyed store with no paths has no path to construct, so path
+  traversal does not exist as a class of defect; a write-once store cannot be altered between check and use.
+- **It was already anticipated.** The decision behind [[RFC-0004]] records interfaces growing toward a general
+  filesystem as a drift to watch, so declining it here is consistency rather than a new position.
+
+Why a byte cache is a **decorator rather than a layer**: because retrieval is defined as explicit offset and
+length with batched multi-range support, a cache is simply an implementation of that interface wrapping
+another. Coalescing and deduplication become portable logic, the backing store stays host-supplied, and a
+consumer cannot tell a caching source from a non-caching one.
+
+Why decoded entries are keyed **per attribute**: [[RFC-0002:C-PROJECTION]] otherwise forces a choice between
+fragmenting the cache per distinct projection and caching whole records, which discards the benefit projection
+exists for. Caching each decoded attribute separately and assembling a batch on demand avoids both, and
+sharing across pipelines with differing projections then requires no special handling.
+
+Why integrity is verified **only on the committed path**:
+
+- **The consequences are not comparable.** A tampered entry serving a preview costs a wrong pixel. The same
+  entry serving a committed run costs a wrong delivered measurement.
+- **The cost lands where it hurts most.** Verifying every read puts a digest over every cached byte range on
+  the interactive path, the only path with a frame budget, to protect output
+  [[RFC-0003:C-PREVIEW]] 1 already forbids anyone from keeping.
+- **It is the split already used five times.** Strictness where a result is kept, latitude where it is not.
+
+Why failure is a **cache miss and not an error**: [[RFC-0007:C-BAKE]] 4 and [[RFC-0004:C-CACHE]] 1 guarantee
+every entry is re-derivable, so discarding and re-deriving is always available. Treating verification failure
+as an error would turn a recoverable condition into an interruption, and would tempt an implementation to skip
+verification to avoid spurious failures.
+
+The obligation is detection, not prevention. Nothing here stops an entry being altered; the guarantee is that
+an altered entry cannot silently contribute to a delivered result — the same standard
+[[RFC-0005:C-BINDING]] applies to a substituted source."""
+consequences = """
+### Positive
+
+Caching needs no new capability, so the privilege surface does not grow — and on a constrained host the same
+cache code works against browser-resident storage as against a disk, because neither paths nor handles were
+ever assumed. A byte cache is interchangeable with a plain source, so caching can be added or removed
+without a consumer noticing. Per-attribute keying makes cache sharing automatic across pipelines that read
+different attribute sets. And a stated guarantee — that consolidation cannot change results — becomes
+enforceable rather than aspirational.
+
+### Negative
+
+Two verification regimes exist, so whether an entry is serving a committed run must be known at the point of
+use rather than inferred later. Every entry carries a digest, which costs storage and a hash on write even
+where it is never verified.
+
+A tampered entry can still affect a preview, and therefore what a user believes they are looking at. That is
+accepted rather than overlooked: [[RFC-0003:C-PREVIEW]] 1 forbids a preview being kept or exported, so the
+cost is a wrong pixel and cannot become a wrong delivered measurement.
+
+### Neutral
+
+Three drifts to watch. First, the storage interface acquiring paths or handles because a cache
+implementation would find them convenient — the drift [[ADR-0004]] already names, arriving disguised as
+ergonomics. Second, verification being skipped on the committed path under performance pressure, which would
+silently unenforce [[RFC-0007:C-BAKE]] 2 while every existing test continues to pass. Third, verification
+failure being surfaced as an error because a silent cache miss looks like hidden behaviour — that would push
+implementers toward disabling verification, which is the opposite of the intent, and is why
+[[RFC-0004:C-INTEGRITY]] 3 routes the signal into the evaluation configuration instead.
+
+Reversal cost is low in the direction of strengthening and high in the direction of loosening. Widening
+verification to every read later is additive. Narrowing it, or adding a filesystem abstraction, are the
+changes that cost — the first weakens a delivered-result guarantee, the second expands privilege in a way
+every host implementation would then depend on."""
+
+[[content.alternatives]]
+text = "Caches are decorators over the existing host interfaces, keyed per attribute, carrying a content digest verified only where an entry contributes to a committed run"
+status = "accepted"
+pros = [
+    "No new capability or interface — the two host interfaces already suffice",
+    "Narrow interfaces are the security property: no paths to traverse, no in-place modification to race",
+    "A byte cache implementing the retrieval interface makes caching and non-caching sources interchangeable",
+    "Per-attribute keying avoids both projection fragmentation and whole-record waste",
+    "Verification cost lands off the interactive path, which is the only path with a frame budget",
+    "Verification failure degrades to a cache miss, since every entry is re-derivable by construction",
+]
+cons = [
+    "Two verification regimes, so which path an entry serves must be known at use time",
+    "A tampered entry can still affect a preview, and therefore what a user believes they are seeing",
+]
+
+[[content.alternatives]]
+text = "Introduce a virtual filesystem abstraction for cache storage, with paths and handles, implemented per host"
+status = "rejected"
+pros = [
+    "Familiar shape that most developers can implement without reading a specification",
+    "Directory structure gives cache organisation and inspection for free",
+    "One abstraction serves caching, spill, configuration and export",
+]
+cons = [
+    "Paths, traversal, handles and permissions are strictly more authority than caching needs",
+    "Path handling reintroduces traversal as a class of defect that a keyed store cannot have",
+    "Seekable handles cannot be implemented where retrieval is request-shaped",
+]
+rejection_reason = "It increases privilege in the name of reducing attack surface. Caching needs to read byte ranges and to put and get opaque keys, both already specified; a filesystem abstraction adds paths that can be traversed, handles that can be raced, and permissions to get wrong. The decision behind [[RFC-0004]] already recorded exactly this growth as a drift to watch."
+
+[[content.alternatives]]
+text = "Verify the digest of every cache entry on every read, regardless of path"
+status = "rejected"
+pros = [
+    "One rule, no regime boundary, and no need to know which path an entry serves",
+    "A tampered entry cannot affect even what a user sees on screen",
+]
+cons = [
+    "Places a digest over every cached byte range on the interactive path",
+    "Protects output that [[RFC-0003:C-PREVIEW]] 1 already forbids anyone from keeping",
+]
+rejection_reason = "It pays the whole verification cost on the one path that has a frame budget, to protect results that may not be kept or exported. A tampered entry serving a preview costs a wrong pixel; the same entry serving a committed run costs a wrong delivered measurement, and only the latter warrants the cost."
+
+[[content.alternatives]]
+text = "No integrity verification: rely on the source fingerprint alone to detect problems"
+status = "rejected"
+pros = [
+    "Zero cost on every path; simplest possible implementation",
+    "Fingerprints already detect the common case of a source having been replaced",
+]
+cons = [
+    "A fingerprint detects staleness, not modification of the cache entry itself",
+    "A tampered baked overlay would change a delivered result while [[RFC-0007:C-BAKE]] 2 asserts it cannot",
+]
+rejection_reason = "It leaves a stated guarantee unenforced. [[RFC-0007:C-BAKE]] 2 asserts that consolidation cannot change results, and without entry integrity a modified overlay does exactly that, silently, with the provenance trail recording that nothing was wrong. A digest is cheap where it is required and re-derivation makes failure recoverable."

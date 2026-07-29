@@ -1,0 +1,41 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-PARTITIONING"
+title = "Adaptive partitioning"
+kind = "normative"
+status = "active"
+
+[content]
+text = """
+A cache that reshapes partitions to match how a user is working is a real optimisation — merging nodes
+while the camera orbits one tree, subdividing them for finer working sets. It is also incompatible with
+bit-identical results, because partition identity is what fixes reduction order. So it is permitted exactly
+where nothing reproducible depends on it, and desirable there.
+
+1. Partitioning used for a committed run MUST be derived only from the source's spatial index and the
+   operators' declared requirements.
+   - It MUST NOT depend on interaction history, cache state, or camera position.
+   - An adapted partitioning MUST NOT be reused for a committed run, including where one is already
+     resident.
+2. Partitioning used for preview or rendering MAY adapt to access patterns, merging or subdividing freely.
+3. A cache MUST NOT subdivide a partition in order to satisfy an operator's neighbourhood requirement.
+   - Supplying neighbours is the planner's duty, discharged from the declared halo width
+     ([[RFC-0002:C-EXEC]] 1 and [[RFC-0002:C-HALO]] 3).
+
+#### Rationale
+
+(1) is entailed by C-COMMIT 3, C-COMMIT 4 and [[RFC-0005:C-BINDING]] 5 taken together — reduction order
+fixed by partition identity, a recorded partition size, and a fingerprint on every derived artefact. An
+adaptive partitioning satisfies none of the three. The nested prohibition on *reuse* is stated separately
+because entailment does not stop an already-warm adapted partitioning from being picked up, which is the
+concrete way this is violated in practice.
+
+(2) is not merely tolerated but wanted, and it is licensed by the same split that governs everything else:
+render state is derived and never authoritative ([[RFC-0007:C-EXTRACT]] 1 and 2), and previews are already
+released from reproducibility by C-PREVIEW 2. Nothing repeatable depends on the shape of a render
+partition, so the cache may do whatever serves the interaction.
+
+(3) is stated as a prohibition on the *cache* rather than as a restatement of the planner's duty, which
+[[RFC-0002:C-HALO]] already owns. The point is that a second, non-deterministic mechanism for supplying
+neighbours must not appear alongside the deterministic one."""

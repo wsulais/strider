@@ -1,0 +1,36 @@
+#:schema ../../schema/rfc.schema.json
+
+[govctl]
+id = "RFC-0005"
+title = "Coordinate interpretation and point references"
+version = "0.1.0"
+status = "draft"
+phase = "spec"
+owners = ["@wael"]
+created = "2026-07-29"
+updated = "2026-07-29"
+tags = [
+    "crs",
+    "architecture",
+    "io-format",
+]
+
+[[sections]]
+title = "Summary"
+clauses = ["clauses/C-OVERVIEW.toml"]
+
+[[sections]]
+title = "Specification"
+clauses = [
+    "clauses/C-CRS.toml",
+    "clauses/C-TRANSFORM.toml",
+    "clauses/C-VERTICAL.toml",
+    "clauses/C-BACKEND.toml",
+    "clauses/C-IDENTITY.toml",
+    "clauses/C-BINDING.toml",
+]
+
+[[changelog]]
+version = "0.1.0"
+date = "2026-07-29"
+notes = "Initial draft"

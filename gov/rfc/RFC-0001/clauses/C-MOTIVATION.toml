@@ -1,0 +1,59 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-MOTIVATION"
+title = "Motivation and prior art"
+kind = "informative"
+status = "active"
+
+[content]
+text = """
+Strider exists because of one gap, and the gap is narrow enough to state precisely: **no tool
+processes point cloud neighbourhoods out of core.** Streaming and processing are each solved; their
+intersection is not.
+
+A neighbourhood algorithm — normal estimation, statistical outlier removal, cloth-simulation ground
+filtering, segmentation — needs points beyond whatever partition it is handed, because a point at the
+edge of a partition has neighbours in the next one. Every existing tool resolves that by holding the
+whole cloud, or by not offering the algorithm.
+
+#### The landscape
+
+| Tool | Streams a large cloud | Processes | Neighbourhoods out of core |
+| --- | --- | --- | --- |
+| CloudCompare | ✗ | ✓ rich | ✗ — reads COPC but decompresses it whole and builds an in-memory octree, so the format's hierarchy buys nothing |
+| QGIS | ✓ local and remote | ✗ | ✗ — an excellent viewer; since 3.42 it edits point attributes, but in place, only on a local COPC, and never positions |
+| PDAL | ✓ genuinely streaming | ✓ CLI pipelines | ✗ — see below |
+| Potree | ✓ billions of points | ✗ | ✗ — visualisation only |
+| Entwine | ✓ | indexing only | ✗ |
+| FUSION | ✓ | ✓ forestry-focused | partial — out of core for many operations, but a forestry toolset rather than a general workbench |
+
+PDAL is the closest and the most instructive. Its stages declare whether they can stream, and the
+neighbourhood ones cannot: `filters.normal` takes a whole point view and does not inherit the
+streamable interface, and `filters.outlier` documents two passes over the full view to compute global
+statistics. So PDAL streams a crop and classifies ground from a raster, then holds everything in
+memory the moment a k-nearest-neighbour query appears. That boundary is a property of its
+architecture rather than an omission, which is why it has not simply been fixed.
+
+#### The claim
+
+Strider's differentiating claim is therefore singular and testable: **a neighbourhood operator
+evaluated over a partitioned dataset produces the same result as the same operator evaluated over the
+whole dataset, in memory that does not grow with the dataset.** Everything expensive in this
+specification — requirement declaration, a planner obliged to satisfy them, halo supply, and the
+prohibition on treating an overlapping partitioning as disjoint — exists to make that one sentence
+true. C-CONFORMANCE is how it is demonstrated rather than asserted.
+
+Two secondary claims follow from the same machinery: a delivered result is reproducible bit for bit,
+and a result that diverges from its whole-dataset equivalent says so.
+
+#### What Strider is not
+
+It is not a faster CloudCompare, and not a graphical front end for PDAL. It shares PDAL's streaming
+premise and CloudCompare's interactive ambition, and the reason those have not previously combined is
+architectural rather than a matter of effort — that reasoning is recorded in the architecture
+decisions accompanying this RFC, not restated here.
+
+The primary domain is forestry LiDAR, and nothing in the specification presumes it: the vocabulary is
+domain-neutral and COPC is one source adapter among several, so bathymetry, urban survey and
+industrial scanning are additions rather than reshapings."""

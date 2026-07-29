@@ -1,0 +1,35 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-TOOLKIT"
+title = "Toolkit confinement"
+kind = "normative"
+status = "active"
+
+[content]
+text = """
+A graphical toolkit is an application concern. Confining it there is required by licensing, and is also what
+keeps the renderer usable by anything that is not this application.
+
+1. A library crate MUST NOT depend, directly or transitively, on a graphical toolkit or on bindings to one.
+   - Compliance MUST be verified against the resolved dependency graph, not by review alone.
+2. The renderer MUST NOT contain code specific to any one toolkit or windowing system.
+   - Toolkit-specific integration belongs to the application, which supplies the surface (C-SURFACE 1).
+
+#### Rationale
+
+(1) follows from [[RFC-0001:C-LICENSE]] 4 — Qt's open-source terms are LGPL-3.0 and GPL-3.0, both beyond
+`Apache-2.0 OR MIT` — but is stated separately because the architectural reason outlives the licensing one.
+The commercial-licence loophole that would otherwise apply here (Qt is also sold commercially, so a
+dependency could be argued compliant *for this project* while obliging every adopter) is closed generally by
+[[RFC-0001:C-LICENSE]] 4's third sub-item rather than restated.
+
+(2) is stated as a prohibition on *content* rather than as "implementable against any windowing system",
+which would be a universal claim about systems nobody has built and so unfalsifiable. Absence of
+toolkit-specific code is inspectable; universal implementability is not.
+
+(2) is also the part that survives if licensing ever changes. A renderer that knows which toolkit is hosting it
+cannot be adopted by a tool using a different one, and adoption by other tools is the entire purpose of
+publishing these crates permissively. The verification requirement in (1) exists because the failure mode is
+identical to a licence violation — a toolkit dependency pulled in transitively by a convenience crate breaks
+nothing visible and is found by no test."""

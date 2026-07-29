@@ -1,0 +1,51 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-LICENSE"
+title = "Licence assignment, declaration and dependency compatibility"
+kind = "normative"
+status = "active"
+
+[content]
+text = """
+The libraries are permissive so the ecosystem can adopt them; the application is copyleft so it
+cannot be repackaged proprietarily. The boundary is the **crate**, which is also the unit a
+dependency-licence check can verify.
+
+1. Every published library crate MUST be licensed `Apache-2.0 OR MIT` and MUST declare exactly
+   that expression in its package manifest. A library crate MUST NOT be published under a copyleft
+   licence.
+2. Every distributed application, including any future network-accessible service, MUST be
+   licensed `AGPL-3.0-or-later`.
+3. Licensing MUST be machine-readable across the whole repository, per the REUSE specification:
+   - every authored source file MUST carry inline `SPDX-FileCopyrightText` and
+     `SPDX-License-Identifier` headers;
+   - files that do not take comment headers cleanly MUST be bulk-annotated in `REUSE.toml`;
+   - the full text of every licence in use MUST be present under `LICENSES/`.
+4. A library crate MUST NOT depend, directly or transitively, on a component whose licence imposes
+   obligations beyond `Apache-2.0 OR MIT`.
+   - Compliance MUST be verified automatically against the resolved dependency graph, not by review alone.
+   - Verification MUST run on every dependency change.
+   - A library crate MUST NOT depend on a component whose permissive availability rests on a commercial
+     licence held by this project.
+   - This constrains library crates only. The application MAY depend on copyleft components,
+     including Qt under its open-source terms, consistent with (2).
+
+#### Rationale
+
+The dual expression in (1) is not stylistic: `Apache-2.0` alone is incompatible with **GPL-2.0-only**, so MIT
+is what keeps the crates usable by such a consumer, and Apache is what supplies a patent grant. Which
+ecosystem that adoption is aimed at, and why copyleft libraries would forfeit it, is a comparative question
+argued in the accompanying architecture decision.
+
+AGPL rather than GPL in (2) costs nothing on the desktop, where the network clause never fires, and covers a
+hosted component without a second licence.
+
+(4) is required because a copyleft dependency beneath a library crate makes that crate's declared licence
+false while everything still builds — the declaration in (1) becomes a misrepresentation, and it surfaces
+only when an adopter's lawyer reads the tree. Transitive reach is the substantive part; a directly-added
+dependency gets scrutiny, one arriving three levels down by a minor version bump does not. Hence automatic
+verification on every dependency change rather than at review.
+
+The third sub-item generalises past Qt deliberately. A dual-licensed dependency can always be argued
+compliant *for this project*, and the argument is always wrong for adopters."""

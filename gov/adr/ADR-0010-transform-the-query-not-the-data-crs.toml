@@ -1,0 +1,220 @@
+#:schema ../schema/adr.schema.json
+
+[govctl]
+id = "ADR-0010"
+title = "Transform the query, not the data (CRS)"
+status = "accepted"
+date = "2026-07-29"
+refs = [
+    "ADR-0004",
+    "RFC-0001:C-LICENSE",
+    "RFC-0002:C-APPROX",
+    "RFC-0002:C-HALO",
+    "RFC-0003:C-COMMIT",
+    "RFC-0003:C-RESOLUTION",
+    "RFC-0004:C-HOST",
+    "RFC-0004:C-PORT-GATE",
+    "RFC-0005:C-BACKEND",
+    "RFC-0005:C-CRS",
+    "RFC-0005:C-IDENTITY",
+    "RFC-0005:C-TRANSFORM",
+    "RFC-0005:C-VERTICAL",
+    "RFC-0006:C-TOOLKIT",
+]
+
+[content]
+context = """
+Coordinate handling was expected to be constrained by licensing and is not. PROJ is MIT, so
+[[RFC-0001:C-LICENSE]] 4 permits it beneath a library crate outright.
+
+The actual constraint is the project's own portability regime, and it is harder than the licence would have
+been. PROJ links SQLite, opens a transformation database from disk at runtime, and may fetch grid files
+over the network when network mode is enabled — breaching [[RFC-0004:C-HOST]] 1 and 2 and
+[[RFC-0004:C-PORT-GATE]] 1 respectively. PROJ therefore belongs in the application, exactly as Qt does under
+[[RFC-0006:C-TOOLKIT]], for an unrelated reason. This is the third capability to arrive at the same answer
+after storage, retrieval and parallelism, which suggests the injection pattern is structural rather than
+incidental.
+
+Pure-Rust alternatives exist and are genuinely usable on constrained hosts, but are subsets. `proj4rs`
+targets `wasm32-unknown-unknown` with no libproj or SQLite, supporting a limited grid set and no WKT
+parsing. Rust Geodesy is comparable to PROJ for datum shift and reference-frame transformation, and has
+expanded into physical geodesy including deflections of the vertical and normal gravity models, while its
+projection coverage remains far narrower than PROJ's. Neither replaces PROJ where correctness matters.
+
+Examining what should be transformed produced a stronger conclusion than the original question. Reprojecting
+a point cloud is close to the worst available operation on one: per-point trigonometry over billions of
+points that changes no information content, and — because LAS and COPC store coordinates as scaled integers
+— requantisation that is lossy and forfeits the exact integer accumulation [[RFC-0003:C-COMMIT]] 5 depends
+on. Transforming the *query region* instead costs a handful of operations. This is what QGIS does, and it is
+also why QGIS's edits are never orphaned by reprojection, the finding that closed [[RFC-0005:C-IDENTITY]].
+
+Vertical datums are where this stops being an engineering preference. Ellipsoidal and orthometric heights
+differ by tens of metres, varying geographically, so a vertical datum error offsets every canopy height by a
+smooth plausible constant — no artefact, no error, and a uniformly wrong timber inventory.
+
+A final problem emerged from admitting two backends: a pipeline that produces one answer with the
+full-featured implementation and a slightly different one with the constrained implementation is precisely
+the irreproducibility [[RFC-0003:C-COMMIT]] 2 forbids. Where the difference lives is not uniform. A map
+projection is a closed-form definition on which two correct implementations agree to floating-point
+precision. A datum transformation depends on grid files, on selection among several valid transformation
+pipelines, and on an authority database encoding which is preferred for a given area — so two correct
+implementations can differ by decimetres, which is a real error in a canopy metric."""
+decision = """
+Coordinate reference systems are opaque to library crates, transformation is a host-supplied capability,
+queries are transformed rather than data, and datum shifts in a committed run require the reference backend
+while other transformations only record which backend ran. The obligations are written in
+[[RFC-0005:C-CRS]], [[RFC-0005:C-TRANSFORM]], [[RFC-0005:C-VERTICAL]] and [[RFC-0005:C-BACKEND]]; this ADR
+records only *why*.
+
+Why transformation is **injected** rather than linked:
+
+- **Portability forbids linking it, not licensing.** PROJ is MIT and would be licence-compliant beneath a
+  library crate; it links SQLite, reads a database from disk, and may fetch grids over the network, which
+  the host-capability obligations forbid.
+- **The pattern is now established.** Storage, retrieval, parallelism, presentation and transformation have
+  all arrived at the same answer. Injection is the project's structural response to a capability the
+  environment owns.
+
+Why **queries** are transformed and not the points:
+
+- **The cost difference is billions to one.** Transforming a viewport's bounds is a handful of operations;
+  transforming the points inside it is per-point trigonometry that changes no information content.
+- **Requantisation would be a lasting loss.** LAS and COPC store scaled integers, so reprojecting forces
+  requantisation — lossy, and it forfeits the exact integer accumulation [[RFC-0003:C-COMMIT]] 5 depends on,
+  making later committed runs float-order-dependent unnecessarily.
+- **It keeps references valid.** Points staying in their native system is why reprojection cannot orphan a
+  point reference, the property [[RFC-0005:C-IDENTITY]] relies on and the same avoidance QGIS uses.
+- **Explicit reprojection needs no new machinery.** Being position-independent, it declares zero halo and
+  one pass, so [[RFC-0003:C-RESOLUTION]] 2 already makes it exact under extent restriction. Geoid
+  application is the same shape.
+
+Why vertical datums **fail rather than convert**:
+
+- **The error is undetectable by inspection.** A horizontal mismatch puts data visibly in the wrong place.
+  A vertical datum mismatch yields a correctly shaped surface at the wrong elevation, and every derived
+  height inherits a constant nothing in the output reveals.
+- **Absence is as dangerous as disagreement.** LAS files frequently declare no vertical reference, and
+  treating absence as agreement is the same failure by a shorter route.
+- **It is the third obligation of this shape.** [[RFC-0002:C-HALO]] 2 forbids silent over-counting,
+  [[RFC-0002:C-APPROX]] silent approximation, this silent datum assumption. In each the wrong answer is
+  indistinguishable from the right one, so the discipline must be structural.
+
+Why the backend rule is **tiered rather than uniform**:
+
+- **Implementation dependence is not uniform.** A map projection is closed-form, so correct implementations
+  agree to floating-point precision and recording which ran suffices. A datum transformation depends on grid
+  files, on selection among several valid pipelines, and on an authority database — so two correct
+  implementations can differ by decimetres, which is a real error in a canopy metric.
+- **Uniformity would be wrong in both directions.** Requiring the reference backend for projections buys
+  nothing; merely recording it for datum shifts lets a delivered height depend on which implementation
+  happened to be wired in.
+- **The recording costs nothing.** [[RFC-0003:C-COMMIT]] 4 already requires an evaluation configuration, so
+  backend identity, version and grid-database version are additions to an existing record."""
+consequences = """
+### Positive
+
+PROJ's correctness is available without PROJ being a dependency of anything permissive or portable.
+Reprojection stops being an expensive default and becomes a cheap explicit operator, and points keep the
+scaled-integer representation that makes exact accumulation and stable references possible. The most
+dangerous class of geospatial error — a silent vertical datum assumption — becomes a refusal. And the
+strictness of the backend rule lands only where implementations actually disagree.
+
+### Negative
+
+Two transformation implementations exist behind one interface and must stay behind it. A transformation must
+be classifiable as a datum shift or not, which is a judgement the interface has to expose rather than leave
+implicit. Users arriving from CloudCompare will expect reprojection to be a default rather than an operator
+they add.
+
+A constrained host cannot produce a committed result involving a datum shift — accepted, because such hosts
+are out of scope and preview use remains available, previews being already declared approximate.
+
+### Neutral
+
+Three drifts to watch. First, an implicit transformation being added to make a mismatched-CRS operation
+"just work" — this removes the user's only signal that two datasets were not comparable, which is why
+[[RFC-0005:C-TRANSFORM]] 4 forbids it rather than discouraging it. Second, a constrained backend
+approximating a transformation it lacks grids for: approximately right is the failure
+[[RFC-0005:C-VERTICAL]] exists to prevent, arriving through another door, hence [[RFC-0005:C-BACKEND]] 4.
+Third, a default vertical reference being assumed for LAS files that declare none, because the alternative
+is a tool that refuses to compute canopy heights on data users consider perfectly ordinary — this will
+arrive as a bug report and is the clause working.
+
+Reversal cost is low in the direction of adding backends and high in the direction of relaxing refusal. The
+interface is the commitment; which implementations sit behind it, and which is the reference, are recorded
+configuration rather than architecture. Relaxing the vertical-datum refusal later would be trivially easy
+and would silently invalidate every height computed afterwards, which is the asymmetry to remember."""
+
+[[content.alternatives]]
+text = "Opaque CRS metadata; transformation injected as a host capability; queries transformed rather than data; datum shifts require the reference backend, other transformations record which backend ran"
+status = "accepted"
+pros = [
+    "Keeps PROJ out of library crates, satisfying the portability regime without giving up PROJ's correctness",
+    "Transforming query bounds costs a handful of operations where transforming points costs billions",
+    "Points keep their scaled-integer representation, preserving exact accumulation and reference validity",
+    "The tiered backend rule puts strictness only where implementations genuinely disagree",
+    "Backend and grid-database versions ride on the evaluation record [[RFC-0003:C-COMMIT]] 4 already requires",
+]
+cons = [
+    "Two transformation implementations to maintain against one interface",
+    "A constrained host cannot produce a committed result involving a datum shift",
+    "Users expecting 'reproject my cloud' as a default get an explicit operator instead",
+]
+
+[[content.alternatives]]
+text = "Depend on PROJ directly from the spatial access layer"
+status = "rejected"
+pros = [
+    "One implementation, maximum correctness, no interface to design",
+    "MIT licensed, so [[RFC-0001:C-LICENSE]] 4 permits it",
+    "Full projection and datum coverage with the authoritative transformation database",
+]
+cons = [
+    "Links SQLite and opens a database from disk, breaching [[RFC-0004:C-HOST]] 1",
+    "May fetch grids over the network, breaching [[RFC-0004:C-HOST]] 2",
+    "Will not build for a no-filesystem target, breaching [[RFC-0004:C-PORT-GATE]] 1",
+]
+rejection_reason = "It is the licence-compliant option that the portability regime forbids. A native library linking SQLite and reading a database from disk cannot satisfy the host-capability obligations, and admitting it beneath a library crate would make the portability gate unpassable — abandoning a constraint deliberately adopted in ADR-0004 for a capability that works perfectly well when injected."
+
+[[content.alternatives]]
+text = "Pure Rust only: use proj4rs or Rust Geodesy everywhere and never depend on PROJ"
+status = "rejected"
+pros = [
+    "One implementation, portable everywhere, no host capability to inject",
+    "Compiles for constrained targets with no native dependencies",
+    "Rust Geodesy's datum-shift and physical-geodesy coverage is genuinely strong",
+]
+cons = [
+    "Projection coverage is far narrower than PROJ's, so real datasets will be unsupported",
+    "No WKT parsing in proj4rs, and limited grid support in both",
+    "Would make the project's own implementation the authority on datum transformations",
+]
+rejection_reason = "Correctness in datum transformation depends on grid files and on an authority database encoding which transformation pipeline is preferred for an area. Substituting a subset implementation for that authority means silently producing answers that differ from every other tool in the ecosystem, in the one domain where forestry outputs are most sensitive. These crates are the right constrained-host backend, not the right only backend."
+
+[[content.alternatives]]
+text = "Reproject all sources to a common working CRS on ingest"
+status = "rejected"
+pros = [
+    "Every downstream operation sees one coordinate system; no mismatch handling anywhere",
+    "Combining sources becomes trivial, with no explicit transformation operator needed",
+]
+cons = [
+    "Per-point trigonometry over every point of every source, for no information gain",
+    "Requantisation is lossy and forfeits exact integer accumulation",
+    "Invalidates every point reference, so edits could not survive ingest",
+    "Requires write access and storage for a transformed copy of data defined by not fitting in memory",
+]
+rejection_reason = "It performs the most expensive possible version of the operation, destroys the scaled-integer representation that [[RFC-0003:C-COMMIT]] 5 relies on, and invalidates the point references [[RFC-0005:C-IDENTITY]] depends on. Transforming query regions achieves the same interoperability for a negligible fraction of the cost."
+
+[[content.alternatives]]
+text = "One uniform backend rule: either require the reference backend for every transformation, or merely record the backend for every transformation"
+status = "rejected"
+pros = [
+    "A single rule with no category distinction to explain or police",
+    "No need to classify a transformation as a datum shift or not",
+]
+cons = [
+    "Requiring the reference backend everywhere blocks constrained hosts from even projecting coordinates",
+    "Merely recording it everywhere lets a decimetre-level datum disagreement reach a delivered canopy metric",
+]
+rejection_reason = "Uniformity picks the wrong trade-off in whichever direction it goes. Requiring the reference backend for closed-form projections buys nothing, since correct implementations agree to floating-point precision. Merely recording the backend for datum shifts permits a delivered height to depend on which implementation was wired in, by an amount that matters. The categories genuinely differ, so the rule does too."

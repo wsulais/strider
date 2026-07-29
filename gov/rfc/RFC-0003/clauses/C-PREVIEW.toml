@@ -1,0 +1,42 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-PREVIEW"
+title = "Preview evaluation"
+kind = "normative"
+status = "active"
+
+[content]
+text = """
+A preview exists to answer "does this look roughly right" in a second, not to produce a number anyone
+keeps. Its guarantees are correspondingly weak, and the weakness is licensed only because it is already
+declared approximate under C-RESOLUTION 3.
+
+1. A preview MUST NOT be used as, or reused to produce, the output of a committed run (C-COMMIT).
+   - A committed run MUST re-evaluate rather than consume preview results.
+2. A preview is not required to be reproducible.
+   - Repeated evaluation of the same graph over the same sources MAY yield differing results within the
+     tolerance of its declared reductions.
+3. For an unchanged document, unchanged sources and an unchanged camera, successive previews MUST select
+   the same resolution floor and the same partition set.
+   - Within that, differing reduction order is permitted by (2).
+4. A preview MUST NOT be written to a delivered artefact, and any export path MUST route through C-COMMIT.
+
+#### Rationale
+
+(1) and (4) close the failure this clause exists for. A user previews height above ground, the viewport
+looks correct, and they export — if the export path can consume what the preview produced, a
+camera-dependent, resolution-dependent number has just been delivered as a result. Requiring re-evaluation
+makes reuse impossible rather than merely discouraged, which matters because reusing a warm result is
+exactly the optimisation someone will reach for.
+
+(2) is the relaxation, and it needs no new disclosure machinery: a preview is already declared approximate,
+so non-determinism falls inside a limitation the user has been told about. This is what lets a preview fold
+partial reductions as they arrive and take whatever ordering the scheduler finds fastest — the freedom
+C-COMMIT gives up.
+
+(3) bounds that relaxation where it would otherwise be felt as a defect, and is stated as an obligation
+about *inputs to the evaluation* rather than about what the user perceives, because perception is not
+testable. Selecting the same resolution floor and partition set is checkable, and it is what prevents the
+visible symptom — points changing colour between frames, or a statistics panel whose digits churn while
+nothing moves. Numerical drift within a fixed partition set is below the threshold of a rendered frame."""

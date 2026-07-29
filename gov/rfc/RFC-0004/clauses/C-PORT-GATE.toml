@@ -1,0 +1,39 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-PORT-GATE"
+title = "Portability enforcement"
+kind = "normative"
+status = "active"
+
+[content]
+text = """
+This clause is what makes C-HOST real. A codebase written with portability in mind but never compiled for a
+constrained target is portable for about three weeks. One gate is not enough, because the obvious one does
+not catch the obvious violation.
+
+1. Every library crate MUST compile for a target that provides no filesystem access, no threads, and no
+   blocking I/O.
+2. Every library crate MUST additionally pass a lint that rejects references to ambient capabilities.
+   - The lint MUST reject filesystem types and calls, thread spawning, and sleeping.
+3. Both checks MUST run on every change, and a failure of either MUST be treated as a defect rather than as
+   an unsupported configuration.
+4. A library crate MUST NOT contain environment-specific code paths.
+
+#### Rationale
+
+(2) exists because (1) alone is insufficient — a constrained target's standard library may *stub* the very
+capabilities it lacks, so code referencing them compiles and fails only at run time. The two checks catch
+different classes: the target catches a dependency that cannot build at all, the lint catches a call the
+stub would accept. Neither substitutes for the other. The measurement establishing this, and why intent was
+judged inadequate, are in the accompanying architecture decision.
+
+Running on *every* change rather than periodically (3) is the operative part. A portability check run
+occasionally accumulates a backlog that is then cheaper to declare unsupported than to fix, which is the
+outcome this clause exists to prevent.
+
+(4) is what keeps (1) and (2) from being satisfied trivially by conditional compilation. The residual risk
+neither check closes is a capability interface acquiring a method only a filesystem can implement — that
+would satisfy both and defeat the purpose, and it is accepted as the price of cheap gates rather than
+hidden. Enforcement is compile-time and lint-time only; a browser test suite and a browser deployment are
+out of scope per C-OVERVIEW."""

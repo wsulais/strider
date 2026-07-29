@@ -1,0 +1,38 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-EXPRESSION"
+title = "Declarative expressions"
+kind = "normative"
+status = "active"
+
+[content]
+text = """
+An attribute predicate is the most requested extension in any tool of this kind, and it is also the one form
+of user-supplied logic that cannot break anything. That is not because it is checked; it is because the
+contracts are unreachable from it.
+
+1. An expression MUST be a pure function of a single point's attributes.
+   - It MUST NOT perform input or output.
+   - It MUST NOT retain state between evaluations.
+   - It MUST NOT access any other point.
+2. An expression MUST be evaluable vectorised over Arrow arrays.
+   - It MUST NOT require per-point invocation of user-supplied code.
+3. An operator parameterised by an expression MUST declare zero halo width and a single pass
+   (C-EXEC 1).
+4. Expression evaluation MUST be deterministic, so that a pipeline containing one still satisfies
+   [[RFC-0003:C-COMMIT]] 2.
+
+#### Rationale
+
+(1)'s three sub-items are not a general purity requirement — each retires one specific obligation an
+operator could otherwise violate silently, which is what makes an expression safe without any enforcement
+machinery. Which obligations, and why that argument licences admitting expressions at all, is set out in the
+accompanying architecture decision.
+
+(2) is a scale requirement rather than a stylistic one. At billions of points, per-row invocation of an
+interpreter is unusable, so an expression must compile to operations over whole arrays — which rules out
+arbitrary control flow and user-defined calls, and so independently reinforces (1).
+
+(3) follows from (1) rather than adding to it, and is stated so the planner can rely on it without inspecting
+the expression."""

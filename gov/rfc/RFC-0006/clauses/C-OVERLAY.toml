@@ -1,0 +1,37 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-OVERLAY"
+title = "Depth correctness and overlay content"
+kind = "normative"
+status = "active"
+
+[content]
+text = """
+Content composited over the viewport by a toolkit has no depth information, so it cannot be occluded by the
+point cloud. Whether that is acceptable depends entirely on the content, and the line is worth fixing before
+the first label is drawn.
+
+1. Content whose correctness depends on depth relative to the point cloud MUST be drawn by the renderer.
+   - This includes measurements anchored to points, annotations attached to positions, and selection
+     geometry in the scene.
+   - A host MUST NOT composite such content over the viewport.
+2. Content independent of scene depth MAY be composited over the viewport by the host.
+   - This includes tool palettes, panels, readouts, and other interface chrome.
+
+#### Rationale
+
+A label composited on top of the viewport floats in front of geometry it should be behind. For a measurement
+anchored to a point on the far side of a stand, that is not a cosmetic flaw: the reading appears to belong to
+the near surface, which is a different tree. Drawing it in the renderer is the only way it can be
+depth-tested against the cloud.
+
+The prohibition is nested under (1) rather than stated as a sibling because it obliges a different party for
+the same reason — the renderer must draw it, therefore the host must not. Stating it explicitly matters
+because the tempting shortcut runs the other way: drawing a text label with the toolkit is far easier than
+drawing text in the renderer, and the result looks correct in every screenshot taken from a viewpoint where
+nothing occludes it.
+
+(2) records that the restriction is narrow. Interface chrome has no spatial relationship to the scene, so
+compositing it is correct as well as convenient, and it is the reason offscreen compositing (C-SURFACE 4) is
+worth supporting at all rather than keeping the viewport permanently opaque."""

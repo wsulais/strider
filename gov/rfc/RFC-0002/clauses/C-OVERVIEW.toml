@@ -1,0 +1,33 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-OVERVIEW"
+title = "Overview and scope"
+kind = "informative"
+status = "active"
+
+[content]
+text = """
+An operator expressed only as an opaque stream transform cannot be scheduled out of core: it has no way to
+tell the scheduler it needs points it was not handed, so it either produces silently wrong answers at every
+partition boundary or forces the whole dataset into memory. Every obligation here follows from resolving
+that, and from deciding who may write an operator once the contract exists.
+
+**Scope** — what an operator declares and what the planner owes it in return; the memory ceiling it respects;
+attribute projection; result honesty; who may implement one; what user-supplied logic may express; and how an
+operator's origin bears on the output it produces.
+
+**Out of scope** — preview and committed-run semantics ([[RFC-0003]]); how the environment supplies storage,
+retrieval and parallelism ([[RFC-0004]]); coordinate interpretation and point references ([[RFC-0005]]);
+component boundaries and the rendering path ([[RFC-0006]]); editing ([[RFC-0007]]). Which operators exist,
+and expression syntax.
+
+Extension sits here rather than apart because it is the same subject viewed from outside: C-EXTENSION says
+who may satisfy the contract, C-EXPRESSION says what a user may supply within it, and C-ORIGIN says what
+follows when nobody has checked the contract was met. Separating them would put the contract in one document
+and the constraints on meeting it in another.
+
+The design is patterned on a physical query planner — operators declare requirements, the planner inserts
+operations that satisfy them — because that is the shape that makes out-of-core scheduling tractable. It is
+deliberately **not** patterned on a query *engine*: the two capabilities point clouds need and tabular
+engines lack are overlapping partitions and level of detail."""

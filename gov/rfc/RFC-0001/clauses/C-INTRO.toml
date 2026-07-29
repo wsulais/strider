@@ -1,0 +1,52 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-INTRO"
+title = "Introduction"
+kind = "informative"
+status = "active"
+
+[content]
+text = """
+**Strider** is a Rust library ecosystem and a Qt6 desktop workbench for processing point clouds that do
+not fit in memory. It reads a terabyte-scale cloud — from a local file or over HTTP — renders it,
+classifies it, edits it and writes results, without ever materialising the whole dataset. The name is the
+premise: you *stride over* terrain rather than sink into it.
+
+It is two things deliberately, and the split matters to anyone reading further. The libraries are
+permissively licensed and meant to be adopted by other tools; the application is the finished product.
+C-LICENSE specifies the boundary and why it falls where it does.
+
+#### The system
+
+Five components, layered so that each is usable without the ones above it:
+
+| Component | Responsibility |
+| --- | --- |
+| **spatial access** | traverses a source's spatial index and answers "give me this volume at this level of detail" as a stream of Arrow batches; owns the node cache |
+| **format adapters** | COPC, LAS/LAZ, Parquet/GeoParquet, E57 — none privileged in the internal model |
+| **operators** | one processing step each: crop, reproject, estimate normals, classify ground. Each *declares* what it needs from its input |
+| **renderer** | draws the viewport; see [[RFC-0006]] for what it takes from its host and what it may depend on |
+| **application** | the Qt6 workbench, and the host that supplies every capability the libraries are denied |
+
+Between them sits a **planner** whose entire job is satisfying what operators declare — inserting
+repartitioning, halo construction and summary passes so that a neighbourhood algorithm gets the
+neighbours it needs. That planner is the reason this specification exists, and [[RFC-0002:C-EXEC]] is its contract.
+
+#### Where to start
+
+Not exhaustive — who tends to need each, where the titles alone would not say.
+
+- **RFC-0001** (this document) — what Strider is, who may use it, and what a release may claim.
+- **[[RFC-0002]]** — if you intend to write an operator, or want to know what the engine guarantees.
+- **[[RFC-0003]]** — before trusting a number you intend to deliver to someone else.
+- **[[RFC-0004]]** — if you are embedding a library crate, targeting an unusual environment, or looking for
+  where caching lives.
+- **[[RFC-0005]]** — if your data spans coordinate systems, or if heights matter to your result.
+- **[[RFC-0006]]** — if you are integrating the renderer, or deciding what may be drawn over a viewport.
+- **[[RFC-0007]]** — if you are building editing tools, or need to know what record is kept of a change.
+
+Vocabulary is defined once in `CONTEXT.md` and not redefined here. The *why* behind each substantive choice
+lives in the accompanying architecture decisions, which these clauses point to rather than restate.
+
+"""

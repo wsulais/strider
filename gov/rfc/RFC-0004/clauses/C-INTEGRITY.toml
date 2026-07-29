@@ -1,0 +1,46 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-INTEGRITY"
+title = "Cache integrity"
+kind = "normative"
+status = "active"
+
+[content]
+text = """
+[[RFC-0005:C-BINDING]] 5 detects a *stale* cache entry, not a *modified* one. A cache held in shared storage
+can be altered by something other than this software, and the consequence is not uniform: a tampered baked
+overlay would change a delivered result while [[RFC-0007:C-BAKE]] 2 asserts that baking cannot change
+results.
+
+1. Every cache entry MUST carry a digest of its own content.
+2. A cache entry contributing to a committed run ([[RFC-0003:C-COMMIT]]) MUST be verified against its digest
+   before use.
+3. Failed verification MUST result in the entry being discarded and re-derived.
+   - It MUST NOT interrupt the operation or be surfaced as an error to the user.
+   - Where the entry was contributing to a committed run, the failure MUST be recorded in that run's
+     evaluation configuration ([[RFC-0003:C-COMMIT]] 4).
+   - Repeated verification failure for the same key MUST terminate rather than re-derive indefinitely, and
+     MUST be reported when it does.
+4. A cache entry used only for preview or rendering MAY be used without verification.
+
+#### Rationale
+
+(2) and (4) draw the verification boundary at the committed path rather than at every read. Why that is the
+right boundary — what the interactive path costs, and what a preview is permitted to be wrong about — is
+argued in the accompanying architecture decision.
+
+The first sub-item of (3) is what makes this cheap rather than fragile. C-CACHE 1 guarantees every entry is
+re-derivable, so a verification failure degrades to a cache miss; treating it as an error would convert a
+recoverable condition into an interruption, and would tempt an implementation to skip verification to avoid
+spurious failures.
+
+The second and third sub-items exist because silence and recoverability are different things. Discarding
+quietly is right for the *operation*; discarding quietly and leaving no trace anywhere is not, because the
+threat model here includes tampering, and a delivered result whose inputs were repeatedly found corrupt
+should say so. Recording it in the evaluation configuration costs nothing — [[RFC-0003:C-COMMIT]] 4 already
+requires that record to exist. And an unbounded discard-and-re-derive loop against a persistent corrupting
+agent is a hang, not a mitigation, so termination is required and is the one case that does surface.
+
+The obligation overall is detection, not prevention. Nothing here stops an entry from being altered; the
+guarantee is that an altered entry cannot silently contribute to a delivered result."""

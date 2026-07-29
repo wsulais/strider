@@ -1,0 +1,54 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-INVALIDATION"
+title = "Incremental invalidation of render state"
+kind = "normative"
+status = "active"
+
+[content]
+text = """
+Rebuilding render state each frame is what a general-purpose engine does, and here it would mean
+re-uploading a viewport of points every frame — precisely the cost this project exists to avoid. Retaining it
+means invalidating only what changed, which only works if "what changed" is cheap to determine.
+
+1. Render state MUST be retained across frames rather than rebuilt.
+   - Retention is subject to eviction under memory pressure and to partitions leaving the view; this item
+     prohibits *rebuilding what is still current*, not bounded cache management.
+2. A partition whose **effective edit set** has not changed since the previous extract MUST NOT be
+   invalidated on account of an edit.
+3. Determining a partition's effective edit set MUST be bounded by a function of the edits intersecting that
+   partition, and MUST be independent of the edit stack's length.
+4. Determining which partitions an edit invalidates MUST be bounded by a function of that edit's own extent,
+   and MUST NOT require re-evaluating the edit stack.
+5. Conformance to (3) and (4) MUST be verified by measuring cost across edit stacks differing in length by at
+   least an order of magnitude, with the number of intersecting edits held constant, and demonstrating that
+   cost does not track stack length.
+
+#### Rationale
+
+(3) and (4) are stated as cost bounds rather than as mechanisms, because the mechanism is an implementation
+choice and the bound is what a consumer can rely on. Both are satisfiable by indexing the edit stack
+spatially and by scoping each edit's change signal to its own region, and that is the expected
+implementation — but an obligation to *be spatially indexed* would specify how rather than what, and a
+different structure meeting the same bounds would conform.
+
+Together they are what make a long edit stack survivable. Without them, every partition read replays every
+edit, and a day of manual correction makes a file progressively slower to open — the failure any naive edit
+log has. With them, a partition intersects a handful of edits regardless of how many exist.
+
+(1) inverts the usual engine arrangement deliberately, and the cost is real: retained state with incremental
+invalidation is harder than clearing and rebuilding, and it is the only viable option here. Its nested
+qualification exists because "MUST be retained" read literally would forbid eviction, which no clause
+permits and every implementation needs.
+
+(2) is stated negatively for the same reason. The positive form — only a changed partition *may* be
+invalidated — prohibits invalidating for any non-edit reason, including a partition leaving the frustum.
+
+(3) and (4) say **bounded by** rather than "cost a function of", because every cost is a function of
+something, so the positive half of that phrasing carried no content and only the prohibitions did.
+
+(5) supplies the verification every other scaling claim in this specification carries —
+[[RFC-0002:C-MEMORY]] 5, [[RFC-0002:C-HALO]] 4, [[RFC-0002:C-PROJECTION]] 3. Without it, "MUST be
+independent of the edit stack's length" is a claim no test is obliged to make, and this clause's whole
+purpose is that a day of manual correction must not make a file slower to open."""

@@ -1,0 +1,48 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-PROVENANCE"
+title = "Append-only edit history"
+kind = "normative"
+status = "active"
+
+[content]
+text = """
+A manual reclassification can change a timber volume estimate, and that estimate may be acted on
+commercially. "Who changed what, and when" is therefore a question the system must answer about its own
+output, not merely an undo convenience.
+
+1. Recorded edit history MUST be append-only.
+   - An undone or superseded edit MUST be retained as a recorded event rather than removed.
+2. Every recorded edit MUST carry what is needed to re-derive its effect:
+   - its region or its enumerated point set;
+   - its predicate, where it has one;
+   - its action;
+   - its position in the order.
+3. History MUST NOT be discarded by baking (C-BAKE 3), by cache eviction, or by any space-reclamation
+   mechanism.
+4. An output produced from an edited document MUST carry a reference to the recorded history that produced
+   it, and that reference MUST resolve to a history whose recorded edits are those the output was evaluated
+   from.
+5. The document graph MUST be recordable in a serialised form that names each operator and its parameters,
+   and from which the graph can be reconstructed.
+   - That form MUST be the same representation used to record history under (1) to (4), not a parallel one.
+
+#### Rationale
+
+This is nearly free if designed in and impossible to add retroactively. The stack is already an ordered
+sequence of small records (C-EDIT 2), so retaining superseded ones costs approximately nothing;
+reconstructing a history that was never kept costs everything.
+
+(1) is what separates history from undo state. Undo needs only the ability to reach the previous state;
+provenance needs the record that the intermediate state existed and was rejected — frequently the interesting
+part of an audit.
+
+(3) names the mechanisms that would otherwise erode this by degrees. No individual eviction looks like
+discarding an audit trail, which is exactly how audit trails get discarded.
+
+(5) is what makes the graph a *document* rather than only a runtime structure, and it is required here rather
+than elsewhere because history and graph are the same thing recorded at different granularity — an edit is a
+node, so a format that can record the history can record the graph. Requiring one representation prevents the
+familiar outcome where a pipeline format and a document format drift apart and disagree about semantics.
+[[RFC-0002:C-EXTENSION]] 2 depends on this item."""

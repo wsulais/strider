@@ -1,0 +1,41 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-RENDER"
+title = "Rendering data path"
+kind = "normative"
+status = "active"
+
+[content]
+text = """
+Planning latency is a function of pipeline complexity, which the user controls and which is unbounded. A
+viewport is latency-bound by the frame it must service. Coupling the two gives a viewport that stalls
+precisely when the camera is moving.
+
+1. The rendering data path MUST obtain point data from the spatial access layer directly, without
+   traversing the operator planner.
+2. A rendering data request MUST be cancellable.
+   - Cancellation MUST take effect without waiting for already-dispatched work on that request to run to
+     completion.
+3. Displaying the output of a processing pipeline MUST be a separately scheduled operation, and MUST NOT
+   be performed synchronously by the rendering data path.
+4. Frame scheduling MUST belong to the host rather than to the renderer.
+   - What the renderer may not do in service of that — own a thread, block on presentation, block on device
+     work — is stated once, at C-SURFACE 3.
+
+#### Rationale
+
+Cancellability (2) is required because camera motion invalidates in-flight requests faster than they
+complete; a path that can only be waited on accumulates obsolete work until it collapses. Requiring
+cancellation to take effect *without draining* dispatched work is the substantive part — a cancellation
+that must first finish what it started is not useful at frame rate.
+
+(3) is what (1) would otherwise leave ambiguous. Nothing here prohibits showing processed results; the
+prohibition is on the render path doing the processing inline, which would reintroduce exactly the
+unbounded latency (1) removes.
+
+(4) states only *whose* the frame loop is, and defers the prohibitions to C-SURFACE 3 rather than repeating
+them. Three normative statements of one obligation — here, C-SURFACE 3, and [[RFC-0004:C-HOST]] 3 and 4 —
+with divergent prohibition lists would give a compliance checker two answers about whether blocking on
+device work is in scope. The connection worth keeping is why it matters here: a renderer blocked on
+presentation cannot observe the cancellation (2) requires."""

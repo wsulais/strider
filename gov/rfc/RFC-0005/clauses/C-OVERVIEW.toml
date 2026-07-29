@@ -1,0 +1,29 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-OVERVIEW"
+title = "Overview and scope"
+kind = "informative"
+status = "active"
+
+[content]
+text = """
+Two questions turn out to be the same question: *what does this coordinate mean*, and *which point is
+this*. Both are answered relative to a particular source at a particular version, both are meaningless
+if that source is silently replaced, and both produce failures that are invisible on inspection — a
+vertical datum error shifts every canopy height by a smooth plausible constant, and a stale point
+reference names a different point while resolving perfectly.
+
+**Scope** — how a coordinate reference system is carried and compared; where transformation capability
+comes from; what may be transformed and what may not; vertical datum handling; what a committed result
+guarantees when transformation implementations differ; what a point reference is and where it may be
+used; and how a source is bound to the version a reference was taken against.
+
+**Out of scope** — which projections or grid files are supported, and the transformation implementations
+themselves. Identity across *different* sources: a point in one flight is never the same point as one in
+another. Joins to tabular data, which key on attributes rather than point references.
+
+The design goal for both halves is deliberately narrow. Region edits ([[RFC-0007:C-EDIT]] 2) were shaped
+precisely to avoid needing point identity, so identity is off the common path and need not be a
+format-level guarantee. And coordinate transformation is a capability a library crate may not link
+([[RFC-0004:C-HOST]]), so interpretation belongs to the host while library crates carry and compare."""

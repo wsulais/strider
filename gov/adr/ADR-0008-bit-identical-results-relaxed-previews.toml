@@ -1,0 +1,195 @@
+#:schema ../schema/adr.schema.json
+
+[govctl]
+id = "ADR-0008"
+title = "Bit-identical results, relaxed previews"
+status = "accepted"
+date = "2026-07-29"
+refs = [
+    "RFC-0002:C-APPROX",
+    "RFC-0002:C-EXEC",
+    "RFC-0002:C-OVERVIEW",
+    "RFC-0003:C-COMMIT",
+    "RFC-0003:C-PREVIEW",
+    "RFC-0003:C-RESOLUTION",
+    "RFC-0007:C-EXTRACT",
+    "RFC-0007:C-PROVENANCE",
+]
+
+[content]
+context = """
+[[RFC-0002:C-OVERVIEW]] deliberately deferred level-of-detail and preview semantics, leaving one question open:
+what does it mean to evaluate the document graph at less than full fidelity, and what does a delivered
+result promise?
+
+Two prior decisions had already closed most of it. Level of detail is a stage property the planner can
+see ([[RFC-0002:C-EXEC]] 4), and render state is derived, one-way and never authoritative
+([[RFC-0007:C-EXTRACT]] 1), so a camera position structurally cannot change a result. Any divergence
+from the whole-dataset full-resolution answer must already be declared approximate
+([[RFC-0002:C-APPROX]]).
+
+Examining what remained turned up a conflation. "Preview" is used for two reductions with entirely
+different error characteristics. Reducing **resolution** over the full extent gives a noisier version of
+the correct answer, degrading smoothly — a minimum-elevation raster built from a one-in-sixty-four
+sample is the real raster plus noise. Restricting **extent** gives an answer that is exact inside the
+region and structurally wrong outside it: a global reduce then summarises a subset, so height above
+ground normalises against a ground surface that does not exist beyond the boundary, and a restricted
+extent carries no halo at its edge, so every neighbourhood operator is wrong precisely where the user is
+looking. Clipping to the visible region is the obvious way to make a preview fast, and it produces a
+hard artefact along the edge of the view that moves as the camera moves — which a user reads as a defect
+in the software rather than a limitation of previewing.
+
+Usefully, the distinction did not need a new concept. The declarations already required by
+[[RFC-0002:C-EXEC]] 1 carry exactly the information needed: an operator with zero halo and a single pass
+is position-independent, so restricting its extent is not an approximation at all, while an operator
+with a halo or a second pass changes its answer under restriction rather than merely coarsening it.
+
+The genuinely open question was determinism. Summing twenty billion floating-point values is
+order-dependent, so folding partial results as they arrive produces different final digits run to run —
+identical graph, identical sources, differing output, with every derived statistic inheriting the
+variation. This matters here more than it would elsewhere: [[RFC-0007:C-PROVENANCE]] commits to an
+append-only trail specifically so an output can be defended to a third party, and a trail that replays
+to a slightly different number does not do that job.
+
+No comparable tool faces this in the same form. CloudCompare holds everything at full resolution in
+memory, so it has no preview concept and no partitioned reduction. PDAL is batch-only with no
+interactive tier. QGIS renders but does not process."""
+decision = """
+Committed runs are bit-identical; previews are not required to be. The obligations are written in
+[[RFC-0003:C-RESOLUTION]], [[RFC-0003:C-PREVIEW]] and [[RFC-0003:C-COMMIT]]; this ADR records only
+*why*.
+
+Why **resolution and extent are declared separately**, and why extent restriction is conditional:
+
+- **They fail differently.** Coarser resolution is noise over the right answer. Restricted extent is a
+  structurally different answer outside the region, with no halo at its boundary.
+- **The rule is derived, not invented.** [[RFC-0002:C-EXEC]] 1 already requires each operator to declare
+  halo width and pass count, which is exactly what decides whether restriction is exact. Zero halo and
+  one pass means position-independent, so cropping is lossless; anything else changes the answer.
+- **The cheap implementation is the wrong one.** Clipping to the viewport is the obvious speed-up and it
+  puts a moving artefact at the edge of the view — read as a bug, and fairly, since nothing warned the
+  user.
+
+Why **bit-identical committed runs**, which is the costly half:
+
+- **It is what makes provenance mean anything.** [[RFC-0007:C-PROVENANCE]] exists so a delivered result
+  can be defended to a third party. A trail that replays to different final digits documents a process
+  without establishing a result.
+- **The ordering is already available.** Partitions are identified by spatial index node keys, so a
+  Morton ordering over those keys is a fixed total order the system already possesses. Determinism needs
+  no new sequencing concept — only a refusal to fold partial results in completion order.
+- **The promise is scoped honestly.** Bit-identity holds given the same graph, the same source
+  fingerprints and the same *recorded* evaluation configuration. Claiming independence from partition
+  size would require order-independent accumulation everywhere, a much larger commitment; recording the
+  configuration instead keeps the system tunable without weakening the guarantee, and makes it checkable
+  rather than asserted.
+- **Exact integer arithmetic is available more often than expected.** LAS and COPC store coordinates as
+  scaled integers, so position aggregates can frequently be accumulated exactly — independent of
+  reduction order and therefore of configuration too. A SHOULD rather than a MUST, since arbitrary
+  floating-point attributes have no such representation.
+
+Why previews are **relaxed**, and what bounds the relaxation:
+
+- **It costs no new disclosure.** A preview is already declared approximate under
+  [[RFC-0003:C-RESOLUTION]] 3, so non-determinism falls inside a limitation the user has been told
+  about. No additional signal is needed.
+- **The ordering cost buys nothing there.** Bitwise stability in a number nobody keeps is not a property
+  anyone can use, and the buffering it requires opposes the responsiveness previews exist for.
+- **But instability must not be visible.** Points changing colour between frames, or a statistics panel
+  churning while nothing moves, reads as a defect. [[RFC-0003:C-PREVIEW]] 3 therefore bounds the
+  relaxation perceptually rather than numerically — stability to the user, not bitwise equality, which
+  is precisely what was declined.
+- **And a preview can never become a result.** [[RFC-0003:C-PREVIEW]] 1 and 4 forbid reuse and require
+  export to re-evaluate, because reusing a warm result is exactly the optimisation someone will reach
+  for, and it would deliver a camera-dependent number as a committed one."""
+consequences = """
+### Positive
+
+A delivered result is reproducible by anyone who repeats it as recorded, which is what
+[[RFC-0007:C-PROVENANCE]] needed in order to be worth having. Regression testing becomes exact rather than
+tolerance-based, so a change in output is a signal instead of a judgement call. Previews stay fast, because
+the ordering constraint applies only where the result is kept. And the extent rule needs no new machinery,
+since the operator declarations already decide it.
+
+### Negative
+
+Reductions in committed runs must buffer a bounded window and combine in partition order rather than
+folding partials as they land, which permanently caps how far the scheduler may reorder committed work for
+throughput. Two fidelity regimes exist and must not leak into one another. The evaluation configuration
+must be recorded alongside every committed output.
+
+### Neutral
+
+Bit-identity across *different* partition sizes is not promised, deliberately — recorded configuration is
+the mechanism instead. That is neither a gap nor a guarantee but a scoping choice: a result is reproducible
+by whoever repeats it as it was run, which is the question an audit actually asks.
+
+Three drifts to watch. First, an export path opportunistically consuming a warm preview result: the single
+most likely regression, since it looks like an obvious optimisation and delivers a camera-dependent number
+as a committed one — which is why [[RFC-0003:C-PREVIEW]] 1 forbids reuse rather than discouraging it.
+Second, previews being clipped to the viewport for speed regardless of declared halo, reintroducing the
+moving boundary artefact. Third, the committed path acquiring completion-order folding under performance
+pressure, which would silently convert bit-identity into approximate reproducibility while every test that
+checks a tolerance continues to pass.
+
+Reversal cost is asymmetric. Relaxing committed determinism later is easy and would invalidate the
+provenance guarantee that justified it. Tightening it later means auditing every reduction in the system
+for order dependence, and any output produced beforehand remains unreproducible."""
+
+[[content.alternatives]]
+text = "Bit-identical committed runs via reduction ordered on partition identity, with determinism relaxed for previews"
+status = "accepted"
+pros = [
+    "A provenance trail that replays to the same bytes is defensible; one that drifts is not",
+    "The fixed order is already available — partitions are keyed by spatial index node, so a Morton ordering needs no new concept",
+    "The relaxation needs no new disclosure: previews are already declared approximate",
+    "Previews keep full scheduler freedom, so the interactive tier stays fast where it matters",
+    "Recording the evaluation configuration makes the guarantee checkable rather than asserted",
+]
+cons = [
+    "Partial results cannot be folded opportunistically; a bounded window must be buffered and reduced in order",
+    "Permanently constrains how far the scheduler may reorder committed work for throughput",
+    "Two fidelity regimes to implement and to keep from leaking into one another",
+]
+
+[[content.alternatives]]
+text = "Bit-identical everywhere, previews included"
+status = "rejected"
+pros = [
+    "One rule, no regime boundary to police, no chance of a preview being mistaken for a result",
+    "Previews would be perfectly stable frame to frame with no extra obligation",
+]
+cons = [
+    "Imposes ordered reduction on the latency-critical interactive path for no user-visible benefit",
+    "Numbers nobody keeps are made expensive to compute",
+]
+rejection_reason = "It pays the ordering cost where the result is discarded. A preview is already declared approximate, so bitwise stability adds nothing a user can rely on, while the buffering it requires directly opposes the interactive responsiveness previews exist to provide."
+
+[[content.alternatives]]
+text = "Reproducible within a documented tolerance everywhere: fold partials as they arrive, document float order-dependence"
+status = "rejected"
+pros = [
+    "Maximum scheduler freedom and throughput on every path",
+    "Simplest implementation; what most of the field does",
+    "No buffering, no ordering constraint, no regime boundary",
+]
+cons = [
+    "Two runs of the same graph over the same data yield different delivered numbers",
+    "Hollows out [[RFC-0007:C-PROVENANCE]], whose purpose is defending an output to a third party",
+    "A tolerance is unfalsifiable in practice — nobody knows what tolerance a downstream analysis needed",
+]
+rejection_reason = "It undermines a guarantee already committed to. An append-only provenance trail exists so a result can be reproduced and defended; if replaying it yields a different number, the trail documents a process rather than establishing a result. The throughput gained is modest once reduction is ordered on keys the system already has."
+
+[[content.alternatives]]
+text = "Clip previews to the visible extent unconditionally, for speed"
+status = "rejected"
+pros = [
+    "Fastest possible preview: work is proportional to what is on screen",
+    "Trivial to implement — the viewport bounds are already known",
+]
+cons = [
+    "Neighbourhood operators have no halo at the view boundary, so results are wrong at the edge of the screen",
+    "Global reduces summarise a subset, so height above ground and similar normalise against a nonexistent surface",
+    "The artefact moves as the camera moves, which reads as a software defect",
+]
+rejection_reason = "It produces a visible, moving error exactly where the user is looking, with no warning. Restriction is exact only for operators declaring zero halo and a single pass, and the declarations required by [[RFC-0002:C-EXEC]] 1 already say which those are — so the correct rule is available at no cost and there is no reason to guess."

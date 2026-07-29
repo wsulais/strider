@@ -1,0 +1,15 @@
+#:schema ../schema/guard.schema.json
+
+[govctl]
+id = "GUARD-SPEC-CITED-IN-TESTS"
+title = "spec cited in tests"
+refs = ["RFC-0001"]
+
+[check]
+command = '''
+bash -c 'shopt -s nullglob; ok=1; files=(crates/*/tests/*.rs)
+if [ ${#files[@]} -eq 0 ]; then echo "no test files yet"; exit 0; fi
+for f in "${files[@]}"; do
+  grep -q "verifies \[\[RFC-" "$f" || { echo "uncited test file: $f"; ok=0; }
+done; [ $ok -eq 1 ] && echo "all ${#files[@]} test files cite a clause"''''
+timeout_secs = 300

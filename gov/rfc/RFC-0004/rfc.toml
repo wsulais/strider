@@ -1,0 +1,33 @@
+#:schema ../../schema/rfc.schema.json
+
+[govctl]
+id = "RFC-0004"
+title = "Host capabilities, portability and caching"
+version = "0.1.0"
+status = "draft"
+phase = "spec"
+owners = ["@wael"]
+created = "2026-07-29"
+updated = "2026-07-29"
+tags = [
+    "architecture",
+    "out-of-core",
+]
+
+[[sections]]
+title = "Summary"
+clauses = ["clauses/C-OVERVIEW.toml"]
+
+[[sections]]
+title = "Specification"
+clauses = [
+    "clauses/C-HOST.toml",
+    "clauses/C-PORT-GATE.toml",
+    "clauses/C-CACHE.toml",
+    "clauses/C-INTEGRITY.toml",
+]
+
+[[changelog]]
+version = "0.1.0"
+date = "2026-07-29"
+notes = "Initial draft"

@@ -1,0 +1,13 @@
+#:schema ../schema/guard.schema.json
+
+[govctl]
+id = "GUARD-NO-AMBIENT-CAPABILITY-IN-LIBRARY-CRATES"
+title = "no ambient capability in library crates"
+refs = [
+    "RFC-0004:C-HOST",
+    "RFC-0004:C-PORT-GATE",
+]
+
+[check]
+command = "devenv shell -- cargo clippy --workspace --exclude strider-app --all-targets --all-features -- -D warnings"
+timeout_secs = 900

@@ -1,0 +1,56 @@
+version = 1
+
+# Machine-readable licensing (https://reuse.software), required by
+# [[RFC-0001:C-LICENSE]] (3). Strider's own authored code carries inline SPDX
+# headers (see any crates/**/*.rs); this file bulk-annotates the authored
+# non-code files that don't take comment headers cleanly.
+#
+# POLICY — the licence split is per-crate, not per-repo ([[RFC-0001:C-LICENSE]]):
+#   library crates (strider-core, -io, -algo, -view)  Apache-2.0 OR MIT
+#   applications  (strider-app, any future service)   AGPL-3.0-or-later
+# Each crate's own sources carry its own SPDX identifier; the annotations below
+# only cover shared repository-level files. Adding a crate means adding its
+# sources under the right identifier — never widening a block below to cover it.
+
+# Governance, docs, and repo-level config: permissive, so the specs and decision
+# records can be quoted, forked, and reused by anyone (including the permissively
+# licensed projects RFC-0001 exists to court).
+[[annotations]]
+path = [
+  "**/*.md",
+  "*.toml",
+  "Cargo.lock",
+  "gov/**",
+  "docs/**",
+  ".gitignore",
+  "devenv.nix",
+  "devenv.yaml",
+  "devenv.lock",
+  ".envrc",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Strider contributors"
+SPDX-License-Identifier = "Apache-2.0 OR MIT"
+
+# Library crates — permissive per [[RFC-0001:C-LICENSE]] (1). These are the crates
+# PDAL, GDAL, QGIS and commercial tools must be able to link.
+[[annotations]]
+path = [
+  "crates/strider-core/**",
+  "crates/strider-io/**",
+  "crates/strider-algo/**",
+  "crates/strider-view/**",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Strider contributors"
+SPDX-License-Identifier = "Apache-2.0 OR MIT"
+
+# Applications — copyleft per [[RFC-0001:C-LICENSE]] (2). AGPL rather than GPL so a
+# future hosted or browser-delivered component needs no second licence.
+[[annotations]]
+path = [
+  "crates/strider-app/**",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Strider contributors"
+SPDX-License-Identifier = "AGPL-3.0-or-later"

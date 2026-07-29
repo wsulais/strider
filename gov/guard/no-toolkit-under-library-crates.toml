@@ -1,0 +1,15 @@
+#:schema ../schema/guard.schema.json
+
+[govctl]
+id = "GUARD-NO-TOOLKIT-UNDER-LIBRARY-CRATES"
+title = "no toolkit under library crates"
+refs = ["RFC-0006:C-TOOLKIT"]
+
+[check]
+command = '''
+devenv shell -- bash -c 'ok=1; for c in strider-core strider-io strider-algo strider-view; do
+  cargo tree -p "$c" --prefix none --no-dedupe 2>/dev/null \
+    | grep -Eq "^(cxx-qt|cxx-qt-lib|cxx-qt-build|qttypes|qmetaobject|qt-|slint|iced|egui|gtk)" \
+    && { echo "FAIL: $c depends on a GUI toolkit (RFC-0006:C-TOOLKIT 1)"; ok=0; }
+done; [ $ok -eq 1 ] && echo "no toolkit beneath any library crate"''''
+timeout_secs = 900

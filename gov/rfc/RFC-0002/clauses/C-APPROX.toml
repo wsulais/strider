@@ -1,0 +1,47 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-APPROX"
+title = "Approximate results and disclosure"
+kind = "normative"
+status = "active"
+
+[content]
+text = """
+Partition-wise computation with a finite halo does not reproduce the whole-dataset answer, and neither
+does computation on reduced-resolution input. Both are acceptable engineering trade-offs and unacceptable
+surprises. The users this serves make decisions with the output — timber volume, canopy metrics, terrain
+models feeding downstream analysis.
+
+1. An operator whose result differs from the result of its whole-dataset, full-resolution formulation MUST
+   declare its output **approximate**.
+   - The declaration MUST identify the **kind** of divergence, not merely its presence.
+   - It MUST document the conditions under which the difference arises.
+2. A pipeline containing at least one such operator MUST declare its own output approximate.
+3. A user-facing surface MUST NOT present approximate output without indicating that it is approximate.
+4. An **evaluation** reduced below the whole dataset at full resolution MUST declare its output approximate,
+   on the same terms as (1).
+   - The reductions that trigger this, and the kinds they correspond to, are
+     [[RFC-0003:C-RESOLUTION]] 1 and 3.
+
+#### Rationale
+
+Ground classification computed per tile disagrees with a whole-cloud run along tile seams; a normal
+estimated near a partition edge is computed from a truncated neighbourhood. An artefact along a seam that
+is *visible* in a rendered view is recoverable — the user sees it. The same artefact absorbed into a
+summary statistic is not.
+
+Identifying the *kind* (1) matters because knowing output is approximate is insufficient when "sampled at
+one point in sixty-four" and "computed without neighbours past the boundary" have different shapes: the
+first is noise a user can reason about, the second is a localised error at a known place. [[RFC-0003]]
+gives the taxonomy of reductions that produce each; this clause requires only that the kind be named,
+so the obligation stands without it.
+
+Propagation (2) prevents the disclosure being lost by composition: an exact aggregate over approximate
+input is not an exact result.
+
+(4) exists because (1) and (2) have an *operator* and a *pipeline* as their subjects, and neither covers the
+third case: a pipeline of exact operators evaluated over less than the whole dataset. Without it,
+[[RFC-0003:C-RESOLUTION]] 3 would oblige an evaluation to declare itself approximate "under (1)" while (1)
+said nothing about evaluations — an obligation pointing at nothing. The three subjects are distinct and each
+needs its own trigger."""

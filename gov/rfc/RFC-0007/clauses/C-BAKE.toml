@@ -1,0 +1,45 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-BAKE"
+title = "Consolidation of the executable representation"
+kind = "normative"
+status = "active"
+
+[content]
+text = """
+Spatial indexing makes finding the relevant edits cheap, but not applying them: a heavily corrected stand
+still accumulates deep chains over the same partitions. Consolidation is therefore required, and it happens
+without being asked for.
+
+1. The system MUST consolidate — **bake** — the executable representation of the edit stack without user
+   action, when the cost of evaluating a region's effective edit set exceeds a configured threshold.
+   - The threshold MUST be observable and reportable.
+   - The measured cost, or the outcome of comparing it against the threshold, MUST also be observable.
+2. Baking MUST NOT change the result of evaluating the document graph.
+   - A baked and an unbaked evaluation of the same document MUST produce identical output.
+3. Baking MUST affect only the executable representation.
+   - It MUST NOT alter, collapse, reorder, or discard recorded history (C-PROVENANCE).
+4. A baked representation MUST be re-derivable from recorded history alone, and MUST be discardable at any
+   time without data loss.
+
+#### Rationale
+
+Transparent rather than user-invoked, because the alternative does not work in practice. An explicit "flatten
+history" command is predictable and will not be run; the observable outcome is a workbench that grows slower
+over a day's work and a user who has no reason to connect the two. Consolidation is a caching concern, and
+caches that require manual invalidation are not caches.
+
+The nested requirement in (1) is what turns a delegated value into a verifiable obligation. Delegating the
+threshold is right — it depends on the machine — but an unobservable threshold makes "the system MUST
+consolidate" unfalsifiable. Both halves are needed: an observable threshold with an unobservable measured
+cost still leaves a test unable to establish the condition was met, which is the gap the first version of
+this bullet left open. This mirrors the pattern [[RFC-0003:C-COMMIT]] 4 uses to make
+[[RFC-0003:C-COMMIT]] 2 checkable.
+
+(2) is what makes (1) safe to do unasked. If baking could change results, doing it automatically would mean
+the system silently altering a forester's output on a threshold the forester cannot see.
+
+(4) is the property that makes a baked representation a cache rather than a second source of truth. Because
+it is re-derivable and discardable, a bake defect is recoverable by deletion, and a corrupted bake cannot
+destroy work. It is also what [[RFC-0004:C-CACHE]] 1 generalises to every cache."""

@@ -1,0 +1,62 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-BACKEND"
+title = "Transformation backends and committed results"
+kind = "normative"
+status = "active"
+
+[content]
+text = """
+More than one transformation implementation will exist — a full-featured one requiring a filesystem and a
+constrained one that does not — and they will not always agree. A pipeline yielding one answer with the first
+wired in and a slightly different answer with the second is exactly the irreproducibility
+[[RFC-0003:C-COMMIT]] 2 forbids, so the two cases are separated by how much the answer depends on the
+implementation.
+
+1. Exactly one transformation implementation MUST be designated the **reference backend**.
+   - The designation MUST be recorded in the project's governed configuration, not inferred from what is
+     installed or available at run time.
+2. A committed run whose pipeline includes a **datum transformation** MUST use the reference backend.
+   - A transformation is a datum transformation when its source and target geodetic datums differ, as
+     recorded by the authority registry the reference backend consults.
+   - It MUST fail rather than substitute another backend.
+3. For transformations that are not datum transformations, any backend MAY be used.
+4. For every transformation, whether or not it is a datum transformation, the recorded evaluation
+   configuration ([[RFC-0003:C-COMMIT]] 4) MUST include:
+   - the backend's identity and version;
+   - the version of any transformation database or grid set consulted.
+4. A backend that cannot perform a requested transformation MUST fail, naming what it could not do.
+   - It MUST NOT substitute a coarser transformation that approximates the request.
+
+#### Rationale
+
+The split in (2) and (3) reflects where implementation dependence actually lives. A map projection is a
+closed-form mathematical definition, so two correct implementations agree to floating-point precision and
+recording which one ran is sufficient. A **datum transformation** is not: it depends on grid files,
+transformation-pipeline selection among several valid candidates, and an authority database encoding which is
+preferred for a given area. Two implementations can each be correct and differ by decimetres, and decimetres
+of vertical shift is a real error in a canopy metric.
+
+(1)'s recording requirement is what makes the designation checkable rather than ambient. A reference backend
+inferred from the environment would vary between machines, which is the opposite of what a reference is for.
+
+(2)'s nested definition exists because the item's gate is mandatory failure, and a precondition an
+implementer cannot decide would make the clause either over-fail or under-fail. Characterising the class in
+prose — grid files, pipeline selection, an authority database — explains why it matters without saying when
+it applies.
+
+(4) covers *every* transformation rather than hanging under (3), which was the earlier arrangement and left
+the highest-stakes case uncovered: a committed datum transformation had no clause requiring its grid set
+version to be recorded, even though that is exactly the input the rationale says the answer depends on.
+Recording the *database and grid versions* matters as much as the backend: the same implementation
+with an updated transformation database can legitimately produce a different, better answer, and a result
+that cannot say which database produced it is not reproducible even with the same software.
+
+(4) forbids the accommodating behaviour. A constrained backend asked for a transformation it lacks grids for
+could apply a coarser equivalent and be approximately right — which is the failure C-VERTICAL exists to
+prevent, arriving through a different door.
+
+The practical consequence is that a constrained host cannot produce a committed result involving a datum
+shift. That is accepted: such hosts are out of scope, and preview use remains available because previews are
+already declared approximate."""

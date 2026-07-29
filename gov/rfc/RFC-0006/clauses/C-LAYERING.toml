@@ -1,0 +1,43 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-LAYERING"
+title = "Component layering and the query-engine boundary"
+kind = "normative"
+status = "active"
+
+[content]
+text = """
+A general-purpose query engine's physical-operator interface is a large surface on its own release
+cadence. Depending on it means absorbing that churn permanently, in the components whose own public
+traits are least settled — and putting a throughput-oriented planner where C-RENDER needs a frame
+budget.
+
+1. The spatial access, operator, and rendering components MUST NOT depend, directly or transitively, on a
+   general-purpose SQL query engine.
+   - Compliance MUST be verified against the resolved dependency graph, not by review alone.
+2. If a SQL interface over point cloud data is provided, it MUST be a separate optional component that
+   depends on the spatial access layer.
+   - The spatial access layer MUST NOT depend on it.
+3. The spatial access component MUST NOT depend on the operator component or the rendering component.
+   - The operator component MUST NOT depend on the rendering component.
+
+#### Rationale
+
+This clause constrains the dependency graph, not the feature set. The direction stated in (2) is what
+preserves the option: exposing a settled spatial access layer to a query engine later is straightforward,
+whereas extracting an engine dependency from underneath established traits is a rewrite.
+
+Most point cloud operations *are* ordinary special cases of the tabular model. The two that are not are
+overlapping partitions ([[RFC-0002:C-HALO]] 2) and level of detail, and those two are the product — the full
+assessment is recorded in the accompanying architecture decision rather than here.
+
+(3) keeps the spatial access component adoptable on its own. C-RENDER 1 has the renderer read it
+directly, which makes merging the two look attractive — they are adjacent and one is nearly a consumer of
+the other. Separation is what allows a tool with its own renderer, or none, to take the spatial access
+layer without inheriting a graphics dependency.
+
+Separation constrains dependency, not influence. The spatial access component is expected to be *shaped
+by* what the renderer needs — cancellable requests, level-of-detail selection, a useful eviction policy —
+because C-RENDER 1 makes the renderer its most latency-sensitive consumer. The requirement is that the
+arrow points one way, not that the two are designed apart."""

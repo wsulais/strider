@@ -1,0 +1,38 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-SURFACE"
+title = "Host-supplied render surface"
+kind = "normative"
+status = "active"
+
+[content]
+text = """
+The renderer draws into a surface it is given and does not know what produced it. This is the same
+arrangement [[RFC-0004:C-HOST]] applies to storage and retrieval, extended to presentation.
+
+1. The renderer MUST accept its drawing target as an opaque native surface handle supplied by its host.
+2. The renderer MUST NOT create, own, or manage a window.
+   - It MUST NOT depend on the surface having been produced by any particular toolkit or windowing system.
+3. The renderer MUST NOT own a thread, block on presentation, or block on device work
+   ([[RFC-0004:C-HOST]] 3 and 4).
+   - Frame scheduling belongs to the host (C-RENDER 4).
+4. The renderer MUST also accept a target it does not present directly — an offscreen target whose result
+   the host composites.
+   - Switching between presenting and offscreen operation MUST NOT change the obligations in (1) to (3).
+
+#### Rationale
+
+(1) and (2) keep the renderer toolkit-agnostic as C-TOOLKIT 2 requires, and are cheap because a native
+surface handle is what every windowing system already exposes. It is also what a browser canvas exposes, so
+this satisfies [[RFC-0004:C-PORT-GATE]] without a second code path.
+
+(3) is where this differs from an ordinary embedded renderer, which would spawn a render thread and block on
+presentation. Neither is available: the renderer must compile with no threads and must not block, so it is a
+function from state to drawn output rather than a loop.
+
+(4) is forward compatibility that is nearly free now and expensive later. Presenting directly to a surface
+defers all graphics-interop work; compositing an offscreen result into a toolkit's scene graph is what
+C-OVERLAY 2 will eventually require. Because rendering into a host-composited target is a superset of
+presenting to a surface, admitting both from the outset means the later transition changes the application
+and not the renderer's published contract."""

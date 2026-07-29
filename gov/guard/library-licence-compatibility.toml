@@ -1,0 +1,10 @@
+#:schema ../schema/guard.schema.json
+
+[govctl]
+id = "GUARD-LIBRARY-LICENCE-COMPATIBILITY"
+title = "library licence compatibility"
+refs = ["RFC-0001:C-LICENSE"]
+
+[check]
+command = "devenv shell -- cargo deny --workspace check licenses bans sources"
+timeout_secs = 900
