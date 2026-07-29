@@ -17,7 +17,9 @@ contingent on the check instead of on confidence.
      assertion.
    - Where a definition in `CONTEXT.md` and a normative clause disagree, the clause governs.
    - The verifications themselves live with the properties they establish: bounded memory at
-     [[RFC-0002:C-MEMORY]] 5, halo correctness at [[RFC-0002:C-HALO]] 4, reproducibility at
+     [[RFC-0002:C-MEMORY]] 5, halo correctness at [[RFC-0002:C-HALO]] 4, halo removal without rewriting at
+     [[RFC-0002:C-HALO]] 6, single materialisation at [[RFC-0002:C-MATERIALISATION]] 4, reproducibility
+     at
      [[RFC-0003:C-COMMIT]] 6, reduction determinism across configurations at [[RFC-0003:C-COMMIT]] 9,
      projection transparency at [[RFC-0002:C-PROJECTION]] 3, and operator conformance at
      [[RFC-0002:C-VERIFIED]].

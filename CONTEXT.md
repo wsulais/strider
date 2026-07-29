@@ -91,6 +91,21 @@ industrial scanning can be added without reshaping it.
 - **Core point** — a point belonging to the partition itself rather than its halo.
   Operators read both and emit only core points, which is what makes a partitioned
   run's point count equal a whole-dataset run's (`RFC-0002:C-HALO` 1).
+- **Halo removal** — dropping a partition's halo points. Because core points precede
+  halo points within a batch, this is a reduction to a *range*: the retained attributes
+  keep the same memory rather than being written again (`RFC-0002:C-HALO` 5). Selecting
+  points on the halo attribute reaches the same answer by rewriting every attribute,
+  which `RFC-0002:C-MATERIALISATION` 1 forbids where the survivors are contiguous.
+- **Passed through** / **derived** — an output attribute is *derived* where an operator's
+  output for it differs from its input for at least one emitted point; otherwise it is
+  *passed through*. Defined by values rather than by declaration so the distinction can
+  be checked rather than asserted (`RFC-0002:C-MATERIALISATION` 1).
+- **Single materialisation** — point data is written into Arrow arrays once, at decode,
+  and every later stage shares those bytes. What makes out-of-core processing *fast*
+  rather than merely possible. Note the two different guarantees it rests on: halo
+  removal and pass-through are *memory*-preserving (`RFC-0002:C-MATERIALISATION`),
+  whereas projection is *value*-preserving (`RFC-0002:C-PROJECTION` 3) — projection is
+  about which attributes exist at all, not about who owns their bytes.
 - **Disjoint partitioning** — one where every point belongs to exactly one
   partition. Aggregation is correct *only* over a disjoint partitioning; a halo
   partitioning is deliberately not one, and mixing them silently over-counts

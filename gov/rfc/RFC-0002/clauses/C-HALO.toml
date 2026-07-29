@@ -19,6 +19,7 @@ rather than slow ones.
    - An operator MAY read halo points.
    - An operator MUST NOT emit halo points to its output.
    - The halo attribute MUST NOT be present in a pipeline's final output.
+   - Within a batch, every core point MUST precede every halo point.
 2. A partitioning that carries a nonzero halo MUST NOT be treated as a disjoint partitioning.
    - Before any operation whose correctness depends on each point appearing in exactly one partition —
      partial-then-final aggregation, counting, summation, mean — the planner MUST either remove the halo
@@ -32,6 +33,17 @@ rather than slow ones.
    output computed over multiple partitions against output computed with the input in a single partition.
    - Where the operator does not declare its output approximate, the two MUST be identical.
    - Where it does, the divergence MUST be bounded and that bound MUST be verified.
+5. Removing a halo MUST reduce the batch to the contiguous range of its core points, without rewriting the
+   attributes it retains (C-MATERIALISATION 2).
+   - A stage that removes a halo MUST first verify that (1)'s ordering holds of the batch it was given, and
+     MUST reject a batch that violates it, naming the batch.
+   - It MUST NOT instead gather the core points from a mis-ordered batch. The gather is what
+     C-MATERIALISATION 1 forbids, and reducing a mis-ordered batch to a range would silently emit halo
+     points and drop core points.
+6. Conformance to (5) MUST be verified by the memory-identity comparison C-MATERIALISATION 4 defines,
+   together with a check that the point count after removal equals the batch's core point count.
+   - The count check is not redundant: memory identity holds for a range taken at the wrong offset or
+     length, so it cannot detect a range that is shared but wrong.
 
 #### Rationale
 
@@ -58,4 +70,25 @@ advance — hence the escape to approximation rather than a prohibition.
 (4) is the verification that cannot be faked, and the identical-not-approximate requirement is stronger
 than it looks. It is tempting to treat small boundary differences as an acceptable tolerance; they are
 not. A sufficient halo makes partitioning exactly lossless, so a difference is evidence the declared width
-is too small — a correctness defect that grows as partitions get smaller."""
+is too small — a correctness defect that grows as partitions get smaller.
+
+(1)'s ordering bullet exists to make (5) achievable, and it is free where the halo is *constructed*: a
+partition's own points are known before any neighbour is borrowed, so appending borrowed points after them
+is the natural order rather than an imposition. Where core and halo points instead arrive interleaved —
+read in storage order, or inherited from a repartitioning — establishing the order costs exactly the gather
+(5) exists to avoid, which is why the obligation is on the batch handed to an operator rather than on every
+batch in existence: the stage that assembles a partition is the one that can satisfy it for free.
+
+(5)'s two bullets are the refusal half, and they matter more than they look. Reducing a batch to a range is
+correct only if the range is the core points, which is true only if (1)'s ordering holds — and a
+mis-ordered batch reduced to a range fails silently, emitting halo points and dropping core points while
+returning a plausible point count. Requiring the ordering to be *verified* rather than assumed is what
+makes the cheap implementation safe; the prohibition on gathering instead is what stops an implementation
+recovering from a violation by paying the cost (5) was written to remove, and thereby hiding a defect in
+whatever produced the batch.
+
+The comparative case — why an in-batch ordering contract is preferable to a row filter, and to supplying
+core and halo points as separate batches — is argued in the accompanying architecture decision. What
+belongs here is only the consequence: the ordering is a semantic contract that a plain Arrow batch cannot
+express in its schema (C-EXEC 3), so (5)'s verification is the only thing standing between it and a silent
+wrong answer."""

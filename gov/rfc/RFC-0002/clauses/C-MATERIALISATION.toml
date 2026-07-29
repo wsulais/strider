@@ -1,0 +1,72 @@
+#:schema ../../../schema/clause.schema.json
+
+[govctl]
+id = "C-MATERIALISATION"
+title = "Single materialisation and pass-through attributes"
+kind = "normative"
+status = "active"
+
+[content]
+text = """
+Out-of-core processing is only worth doing if it is fast, and what dominates a columnar pipeline is not
+arithmetic but writing the same bytes a second time. A point is decoded into Arrow arrays once; every stage
+after that either shares those bytes or pays to copy them. The copy is invisible in results — the answers
+are identical, only slower — so nothing downstream ever complains, and a pipeline can lose most of its
+throughput to work no test is looking for. This clause exists to make the difference checkable.
+
+1. An operator MUST NOT rewrite an attribute it passes through, where the points it emits are a contiguous
+   range of the points it was given.
+   - An attribute is **derived** where the operator's output for it differs from its input for at least one
+     emitted point. Every other output attribute is **passed through**.
+   - Where the points an operator emits are not a contiguous range of its input, it MUST rewrite each
+     passed-through attribute at most once.
+2. A stage that reduces a batch to a contiguous range of its points MUST do so by adjusting which points
+   the batch describes, and MUST NOT produce new memory for the attributes it retains.
+3. Obligations (1) and (2) are scoped to a single process, with no spill ([[RFC-0002:C-MEMORY]] 4) and no
+   serialisation between the two states being compared.
+   - Where a spill or serialisation intervenes, memory identity cannot hold and neither obligation applies.
+   - A stage MUST NOT be relieved of (1) or (2) by introducing a spill or serialisation that the memory
+     ceiling did not require.
+4. Conformance to (1) and (2) MUST be verified by comparing, for every passed-through attribute, the
+   identity of the memory backing it before and after.
+   - The comparison MUST cover every buffer of the attribute's representation transitively: its value
+     buffers, any validity bitmap, any child arrays, and any dictionary values. Comparing only the first
+     value buffer is insufficient — an attribute of a nested or dictionary-encoded type holds none of its
+     content there and would pass the check vacuously.
+   - Both states MUST be live at the moment of comparison, because a freed allocation may be handed back
+     at the same address.
+   - The comparison MUST be of memory identity, not of attribute values. Equal values are what a copy also
+     produces, so a value comparison cannot distinguish the conformant case from the one (1) forbids.
+
+#### Rationale
+
+**Derived is defined by values, not by declaration** (1), because the alternative does not survive contact
+with an author. If an operator declared which attributes it derives, the declaration would be the escape:
+an operator that rebuilds every column could call every column derived and be conformant by construction,
+and no test could contradict it. Defining derived as *differing for at least one emitted point* makes the
+claim falsifiable — an attribute declared derived whose values match its input everywhere is a detectable
+lie — and costs no new declaration surface.
+
+The contiguity condition in (1) is what keeps the obligation honest rather than impossible. An operator
+whose surviving points are scattered — cropping to an arbitrary region, filtering on an attribute — cannot
+share memory with its input at all, and demanding it would make the clause unimplementable and therefore
+ignored. What such an operator can still be held to is the *at most once* bound in the second bullet: one
+gather, not a gather per stage.
+
+(3) exists because (1) and (2) would otherwise contradict [[RFC-0002:C-MEMORY]] 4, which permits spilling
+to satisfy a memory ceiling. Address identity cannot survive a spill and reload, so an implementation
+obeying one clause would breach the other. The second bullet is what stops the scope becoming a loophole:
+spilling is permitted to bound memory, not to escape this clause.
+
+(4) is the verification, and its first bullet is the part that is easy to get wrong in a way that reports
+success. In a typical Arrow implementation the null bitmap is not among an array's data buffers, a struct
+array has no data buffers at all, and a dictionary's values live in a child array — so a check that
+compares one buffer per attribute passes vacuously for exactly the types where a rewrite is most likely.
+The requirement to compare transitively is what makes the check mean what it says.
+
+The obligation is written as a prohibition on rewriting rather than as a permission to share because the
+wrong implementation is the obvious one. Selecting points by predicate is the natural way to express
+"these points and not those", it produces exactly the right answer, and it rewrites every retained
+attribute. Nothing about the output reveals it. Whether an in-batch ordering contract is preferable to the
+alternatives that avoid needing one is a comparative question, argued in the accompanying architecture
+decision rather than here."""
