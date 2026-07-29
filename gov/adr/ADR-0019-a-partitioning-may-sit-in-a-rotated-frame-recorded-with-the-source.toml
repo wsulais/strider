@@ -1,0 +1,152 @@
+#:schema ../schema/adr.schema.json
+
+[govctl]
+id = "ADR-0019"
+title = "A partitioning may sit in a rotated frame, recorded with the source"
+status = "proposed"
+date = "2026-08-01"
+refs = [
+    "RFC-0002:C-EXEC",
+    "RFC-0002:C-HALO",
+    "RFC-0003:C-COMMIT",
+    "RFC-0003:C-PARTITIONING",
+    "ADR-0018",
+]
+
+[content]
+context = """
+A survey strip running diagonally across the axes its source is expressed in fills an axis-aligned tiling with
+mostly-empty partitions. That is not merely wasteful storage: halo cost scales with boundary area, and an
+ill-fitting tiling is exactly what maximises boundary area per point. Aligning a partitioning to the data
+addresses tile count, halo volume and occupancy together.
+
+Nothing in the corpus required partitions to be axis-aligned. [[RFC-0002:C-EXEC]] 4 obliges bounds to be
+declared and says nothing about their orientation, and [[RFC-0002:C-HALO]] 1 states what an alteration to
+positions must preserve rather than which alterations are permitted. So the question was never whether
+orientation is forbidden, but whether the corpus should say anything at all.
+
+The literature says yes and does it per node. A directional binary space partitioning computes each node's
+orientation by principal component analysis and applies a Karhunen–Loève transform to the coordinates inside
+that node, on the stated ground that regular equal division "is not consistent with the irregular and
+non-uniform distribution of most point clouds" and that axis-aligned division leaves empty space in its
+bounding boxes. It reports tighter volumes, faster rendering and lower memory.
+
+Production is unanimous the other way, and that work's own survey says so: existing methods are all axis-aligned
+with regular tree structure. Cloud-optimised point clouds, Entwine point tiles, Potree, LAStools and PDAL all
+partition on an axis-aligned lattice, and a voxelised root subdividing per level *is* such a lattice.
+
+The reason is node identity. A node key is a level plus integer coordinates on a global lattice, which is what
+makes range-readable access work — and in Strider it is what [[RFC-0003:C-COMMIT]] 3 derives its fixed
+reduction order from. Per-node orientation destroys that lattice: a key is no longer computable from a
+position, and two nodes' frames are not commensurable. That last part is the specific obstacle here, because a
+halo crosses partition boundaries by construction. Under per-partition frames, halo points arrive in a
+different frame from the core points they serve, and the grid-alignment reasoning in [[RFC-0002:C-HALO]] 3 has
+no common grid to reason about.
+
+Three obligations already in the corpus constrain any answer, and an earlier draft of this decision collided
+with all three: coordinates may be transformed only through an explicit operator; a library crate must treat a
+coordinate reference system as opaque, so it may not compose one; and a committed run's partitioning may draw
+on nothing but the source's index and what the operators declared."""
+decision = """
+A partitioning may be established over coordinates in a frame reached from the source's by a rigid motion,
+provided the frame is settled before the source is used and travels with it. [[RFC-0003:C-PARTITIONING]] 4
+carries the obligation and the three conditions that reconcile it with the rest of the corpus, together with
+why the recording is the only thing made mandatory. This decision covers what that clause defers: which class
+of motion, and how many frames.
+
+**The class is the rigid motions, and the reason is a coincidence worth naming.** Three quantities have to
+survive for a partitioning to still describe its data. Halo widths are distances, so the motion must preserve
+distance. Membership is a containment test, so the motion must preserve which side of a surface a point falls.
+Reduction order comes from spatial index keys rather than from coordinates, so the motion must leave keys
+alone. A rigid motion is precisely the class that satisfies the first two, and the third it satisfies by not
+being about coordinates at all. Nothing weaker will do: a scaling breaks the first, and a projection breaks it
+non-uniformly, which is worse because a single declared width then bounds different neighbourhoods in different
+parts of an extent.
+
+Translation deserves separate mention because it is nearly free. Coordinates are stored as integers scaled
+about an offset, so a shift is a change to that offset and touches no integer. It is also the one motion that
+costs no precision, where reprojection forces requantisation and a coarser quantum to declare.
+
+**One frame, as advice rather than as a rule.** The alternative with published results behind it orients every
+node separately, and reports tighter volumes for doing so. Its cost falls on two things this project relies on.
+Node keys are computed from position on a shared lattice, and per-node frames leave no shared lattice to compute
+them from. More narrowly but more decisively: a halo is defined by crossing a partition boundary, so a
+per-partition frame guarantees that the points a halo supplies were expressed in a different frame from the
+points they serve — and the reasoning about aligning a summary grid to partition boundaries has no single grid
+left to align.
+
+Neither of those is a proof that per-node frames cannot be made to work, and the tighter volumes are real. That
+asymmetry is why the clause advises one frame instead of requiring it: the reasons are strong enough to steer an
+implementation and not strong enough to foreclose one that has measured otherwise."""
+consequences = """
+### Positive
+
+The occupancy benefit becomes reachable without adding orientation to the bounding-volume model: bounds stay
+axis-aligned *in the frame the source declares*, so node keys, the reduction order derived from them, halo
+widths and grid-alignment reasoning are all untouched. The mechanism is one Strider already permits — the
+isometry case of [[ADR-0018]]'s displacement duty — applied once where the source is written rather than
+mid-pipeline.
+
+### Negative
+
+A source may now be expressed in a frame that is not the one its data was surveyed in, and every consumer
+depends on the recording to place it. That is one more thing a badly written source can omit, and its failure
+mode is silent misplacement rather than an error.
+
+The permission also has a reach limit that is not obvious from its text. A rotated frame and a summary grid
+defined in the source's original frame cannot generally have coinciding boundaries, so the reduced summary halo
+[[RFC-0002:C-HALO]] 3 permits on boundary coincidence becomes unavailable in such a frame. That is a cost paid
+in halo volume, partly offsetting the saving this decision exists to obtain, and it is unmeasured.
+
+### Neutral
+
+Whether a partition's bounds may be **oriented** rather than axis-aligned is still not decided, and this
+decision deliberately does not decide it. It offers a way to get most of the benefit while keeping bounds
+axis-aligned, which makes oriented volumes less pressing rather than unnecessary. If registration or levelling
+later wants to keep its partitioning across a general rotation, that is the moment to decide whether
+[[RFC-0002:C-EXEC]] 4's bounds admit an orientation — a question that ripples into extent restriction and into
+how partitions are keyed.
+
+Two quantities behind this are unmeasured and should not be mistaken for evidence: the actual occupancy gain on
+a diagonal strip, and whether a single global rotation captures most of what per-node analysis would."""
+
+[[content.alternatives]]
+text = "Permit a partitioning over coordinates in a frame related to the source's by an isometry, fixed before any run and recorded with the source, advising one frame per partitioning"
+status = "accepted"
+pros = [
+    "Bounds stay axis-aligned in the declared frame, so node keys and the reduction order derived from them are untouched",
+    "Halo widths stay commensurable across partitions, which per-partition frames would break since a halo crosses boundaries",
+    "Uses a mechanism already permitted — the isometry case of the displacement duty — rather than a new one",
+    "A permission, so an implementation that does not want it opts out of nothing",
+]
+cons = [
+    "A source may be expressed in a frame its data was not surveyed in, and consumers depend on the recording to place it",
+    "Boundary coincidence with a summary grid in the original frame is generally unachievable, so the reduced summary halo becomes unavailable",
+]
+
+[[content.alternatives]]
+text = "Say nothing: leave the corpus silent on frames, as it was"
+status = "rejected"
+pros = [
+    "No new obligation, no new failure mode, nothing to record",
+    "Silence already permits it, since nothing required axis-aligned bounds",
+]
+cons = [
+    "Silence also permits doing it without recording the frame, whose failure is silent misplacement",
+    "Leaves an implementer to rediscover per-node orientation and break the lattice, which is the attractive wrong answer",
+]
+rejection_reason = "The permission is not what needed writing; the recording obligation is. Silence leaves the one part with a silent failure mode ungoverned, and leaves the lattice-breaking approach looking equally available."
+
+[[content.alternatives]]
+text = "Orient each partition independently by principal component analysis, transforming coordinates within each node, as the directional BSP literature does"
+status = "rejected"
+pros = [
+    "Reported tighter bounding volumes than a single rotation, with faster rendering at lower memory",
+    "Adapts to data whose distribution changes across the extent, which one global frame cannot",
+]
+cons = [
+    "Destroys the global lattice: a node key is no longer computable from a position, so the fixed reduction order loses its basis",
+    "A halo crosses partition boundaries by construction, so halo points would arrive in a different frame from the core points they serve",
+    "Grid-alignment reasoning for a summary halo has no common grid left to reason about",
+]
+rejection_reason = "The costs land squarely on machinery the corpus already depends on — node-key-derived reduction order, and commensurable halo widths across a boundary a halo must cross. These are reasons for one frame rather than proofs the approach cannot work, which is why the clause advises one frame instead of forbidding this."

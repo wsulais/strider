@@ -15,9 +15,15 @@ refs = [
 # one buffer per attribute passes vacuously for a struct attribute, which has no data
 # buffers of its own, so the test asserts the transitive form or it asserts nothing.
 #
-# [[RFC-0002:C-HALO]] 6 also requires the halo attribute to be checked against the
-# geometric definition in item 1 — evaluated from the partition's bounding volume, not
-# read back off the column, which would be circular. This belongs here rather than in a
+# [[RFC-0002:C-HALO]] 6 also requires a check that a pipeline's FINAL OUTPUT carries neither
+# the halo attribute nor any halo point, and that check must inspect the output's schema and
+# rows rather than observe that a removal stage ran. Measured, the attribute reached the
+# caller both with a removal stage installed and without one: removal drops rows and leaves
+# the schema alone, so the two failures are independent and only one of them is about rows.
+#
+# It further requires the halo attribute to be checked against the geometric definition in
+# item 1 — evaluated from the partition's declared bounds, not read back off the column,
+# which would be circular. This belongs here rather than in a
 # runtime assertion precisely because it needs the position attributes: obliging every
 # removal to evaluate it would pin those attributes into projections that read none of
 # them.

@@ -8,9 +8,9 @@ status = "active"
 
 [content]
 text = """
-A committed run produces what a forester delivers and may be billed against. [[RFC-0007:C-PROVENANCE]]
-exists so such an output can be defended to a third party, and a trail that replays to a slightly
-different number does not do that job. Determinism is what makes the provenance guarantee mean something.
+A committed run produces what a forester delivers and may be billed against, so its numbers have to survive
+being questioned. [[RFC-0007:C-PROVENANCE]] records how a result was obtained; determinism is what makes that
+record worth reading, because a trail leading to a different figure on re-execution explains nothing.
 
 1. A committed run MUST evaluate at full resolution over its declared extent, and MUST NOT be reduced in
    either respect (C-RESOLUTION 1).
@@ -82,9 +82,9 @@ different number does not do that job. Determinism is what makes the provenance 
 
 #### Rationale
 
-(3) says *partition identity* rather than naming an order because the order is already implied: partitions
-are identified by spatial index node keys, so a Morton ordering over those keys is a fixed total order the
-system possesses without inventing a sequencing concept. What the obligation costs — partial results cannot
+(3) says *partition identity* rather than naming a particular order, because a suitable order already falls
+out of how partitions are named: their keys come from the spatial index, and any total order over those keys
+serves. No sequencing concept has to be invented for this clause. What the obligation costs — partial results cannot
 be folded as they land, so a bounded window must be buffered — is the reason it is stated as a MUST rather
 than left to implementations.
 
@@ -102,6 +102,15 @@ remain conformant on a reading of the first bullet alone; requiring the quantiti
 forbidding that narrowing, closes it. Requiring the *refusal* to be declared is what makes the obligation
 implementable before any associative accumulator exists — a young implementation can be honest about which
 attributes it has not handled, which is more useful than silence.
+
+Between them (5)'s last two bullets settle a question that reads like a gap and is not one: whether a
+reduction may be handed to a component that combines partial results as they arrive. It may, if and only if it
+accumulates associatively — the fifth bullet permits exactly that, and the sixth requires everything else to
+combine in (3)'s fixed order, which such a component cannot do. Measured, a delegated floating-point sum over
+an attribute that *does* admit an associative form produced two distinct bit patterns across forty repetitions
+at two different degrees of parallelism, which breaches (2). It breaches this item first, though: the attribute
+admitted an associative form and the reduction did not use one. The evidence records the cost of ignoring (5),
+not a hole beside it.
 
 (5)'s fifth bullet is why the clause admits two mechanisms at all. A fixed reduction order is enforceable
 only where this specification controls the scheduler, and a general-purpose analytical engine combines

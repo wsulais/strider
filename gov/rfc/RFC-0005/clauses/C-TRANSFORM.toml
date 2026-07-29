@@ -8,10 +8,10 @@ status = "active"
 
 [content]
 text = """
-Reprojecting a point cloud is close to the worst available operation on one: per-point trigonometry over
-billions of points, changing no information, and destroying the scaled-integer representation that makes
-exact accumulation possible. The alternative is to transform what is small — bounds and outputs — and leave
-the points alone.
+Reprojection is an expensive way to change nothing. It applies trigonometry to every point in a dataset whose
+information content the result leaves unaltered, and it costs the exact integer representation that associative
+accumulation depends on. Bounds and outputs are small where points are not, so the cheap arrangement moves the
+small things and leaves the points where they lie.
 
 1. A library crate MUST obtain coordinate transformation from a capability supplied by its caller, and MUST
    NOT link or invoke a transformation library directly.
@@ -40,9 +40,9 @@ the points alone.
 (2) is the substantive requirement. Transforming a viewport's bounds costs a handful of operations;
 transforming the points it contains costs billions. Beyond cost, LAS and COPC store coordinates as scaled
 integers, so reprojection requires requantisation — which is lossy, and coarsens the accumulation quantum
-that every committed reduction over the result must then declare ([[RFC-0003:C-COMMIT]] 7). It does not cost
-bit-identity: a reprojected cloud is still scaled integers, so it still admits the associative accumulation
-[[RFC-0003:C-COMMIT]] 5 requires. What is lost is precision, permanently, in everything derived from it.
+that every committed reduction over the result must then declare ([[RFC-0003:C-COMMIT]] 7). Determinism is not the
+casualty, though: the result remains scaled integers and still admits the accumulation
+[[RFC-0003:C-COMMIT]] 5 requires. Precision is, permanently, in everything computed from it afterwards.
 Keeping points in their native system also means references into
 them stay valid, which is what C-IDENTITY relies on and the reason reprojection cannot orphan an edit.
 

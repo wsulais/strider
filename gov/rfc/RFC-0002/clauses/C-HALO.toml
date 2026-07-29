@@ -42,7 +42,9 @@ rather than slow ones.
    - An operator MAY carry halo points to its output, still marked as halo, only where that output is
      consumed by another operator of the same pipeline declaring a nonzero halo width. Otherwise its output
      MUST contain no halo points.
-   - The halo attribute MUST NOT be present in a pipeline's final output.
+   - The halo attribute MUST NOT be present in a pipeline's final output. Removing halo points does not
+     remove it: (5) reduces the range of rows and retains the attributes it keeps, so the attribute MUST be
+     excluded from the projection that produces the final output ([[RFC-0002:C-PROJECTION]] 1).
    - Within a batch, every core point MUST precede every halo point.
 2. A partitioning that carries a nonzero halo MUST NOT be treated as a disjoint partitioning.
    - Before any operation whose correctness depends on each point appearing in exactly one partition —
@@ -82,12 +84,16 @@ rather than slow ones.
    - It MUST NOT instead gather the core points from a mis-ordered batch. The gather is what
      C-MATERIALISATION 1 forbids, and reducing a mis-ordered batch to a range would silently emit halo
      points and drop core points.
-6. Conformance to (1)'s agreement and to (5) MUST be verified by the memory-identity comparison
-   C-MATERIALISATION 4 defines, together with a check that the point count after removal equals the batch's
-   core point count, and a check that the halo attribute agrees with (1) at every point when evaluated
-   against the partition's bounds, including the closedness those bounds state for each face.
+6. Conformance to (1)'s agreement, to (1)'s prohibition on the halo attribute reaching a final output, and to
+   (5) MUST be verified by the memory-identity comparison C-MATERIALISATION 4 defines, together with a check
+   that the point count after removal equals the batch's core point count, a check that the halo attribute
+   agrees with (1) at every point when evaluated against the partition's bounds, including the closedness those
+   bounds state for each face, and a check that a pipeline's final output carries neither the halo attribute
+   nor any halo point.
    - The count check is not redundant: memory identity holds for a range taken at the wrong offset or
      length, so it cannot detect a range that is shared but wrong.
+   - The final-output check MUST inspect the output's own schema and rows. It MUST NOT be treated as satisfied
+     by observing that a removal stage ran, because a removal drops rows and leaves the schema alone.
    - The agreement check MUST be a conformance verification and MUST NOT be imposed on every batch a stage
      removes a halo from. Evaluating (1) needs the position attributes, so requiring it at each removal
      would oblige a pipeline to carry those attributes through stages that read none of them — the waste
@@ -122,21 +128,18 @@ Fixing the geometry as the definition is also what makes the column **falsifiabl
 stated meaning cannot be wrong, so an obligation about it cannot be checked; a cache of a defined property
 can be wrong, and (6) checks it.
 
-The column is nonetheless kept rather than derived at each use, for a reason that has nothing to do with the
+The column is nonetheless kept rather than derived at each use, and the reason has nothing to do with the
 label. What cannot be recovered from partition bounds is (1)'s **ordering** — which rows form the leading
 contiguous run is not a geometric fact — and the core count that makes removal a range (5) is unfalsifiable
 without something independent to check it against. The column is that something, at one bit per point.
-Deriving membership instead would cost the position attributes in every projection reaching a halo-bearing
-stage, including for operators that read none of them. Carrying it as an ordinary boolean column also keeps
-C-EXEC 3 intact — an external Arrow consumer sees a normal column, not an envelope.
+Carrying it as an ordinary boolean column also keeps C-EXEC 3 intact: an external Arrow consumer sees a normal
+column, not an envelope. Why a derived form was nonetheless considered, and what other systems do with the
+same question, are argued in the accompanying architecture decision.
 
-The requirement that the attribute be *dedicated* is there because the cheap alternative has been tried at
-scale. LAStools' `lastile` records buffer membership by setting each buffer point's **withheld** flag — an
-attribute whose defined meaning in the LAS specification is that a return is unreliable — and the United
-States Geological Survey has since published guidance restricting what that flag may be taken to mean. An
-overloaded attribute makes halo membership
-indistinguishable from whatever else the attribute records, and exports the ambiguity to every consumer of
-the file.
+The attribute must be *dedicated* because an overloaded one makes halo membership indistinguishable from
+whatever else that attribute records, and exports the ambiguity to every consumer of the file. This is not
+hypothetical — the accompanying decision records a widely used tool that overloaded an existing flag for it,
+and the published guidance that followed.
 
 **Never relabel** is what prevents duplication, and it is a narrower rule than never-emit. A point near a
 boundary is supplied to every partition whose halo reaches it; if each turned it into a core point, it would
@@ -152,23 +155,9 @@ points, because the prohibition would have been wrong twice over: it would have 
 reformulations C-MEMORY 2 expressly admits, and it would have treated a whole class of safe operators as
 unsafe.
 
-The safe class is the one where the alteration is an **isometry**, and three quantities have to survive for a
-partitioning to still hold of the output. An isometry preserves all three at once. Distances, so a declared
-halo width is still a width. Containment, so no point changes which side of a boundary it lies on. And
-partition identity, which comes from spatial index node keys rather than from coordinates, so the fixed
-reduction order [[RFC-0003:C-COMMIT]] 3 derives from those keys is untouched. Moving the bounds by
-the same isometry therefore costs nothing and needs no re-establishment. A translation is the extreme case:
-coordinates are stored as scaled integers about an offset, so translating is a change of offset with no
-per-point arithmetic at all and — unlike a reprojection — no requantisation, so the accumulation quantum
-survives too.
-
-The bullet requires those three properties rather than naming the permitted transformations, because one
-question is deliberately left open. A general rotation maps an axis-aligned volume to an oriented one, so
-carrying it exactly preserves all three but obliges the partitioning to admit oriented volumes, while
-replacing it with its axis-aligned bound reintroduces overlap between neighbours and with it the very
-duplication this rule prevents. Translations and quarter turns are exact under either treatment. Stating the
-properties lets an implementation carry the volume wherever it genuinely can, and fall back to
-re-establishment where it cannot, without this clause having to settle the shape of a bounding volume.
+Which alterations can keep the bounds and the positions together, why the safe class is the isometries, and
+what this deliberately leaves unsettled about the shape of a bounding volume, are argued in the accompanying
+architecture decisions rather than here.
 
 The non-disjointness rule (2) exists because the failure is silent. An aggregation over a halo
 partitioning does not fail, log, or crash — it returns a plausible number, too large in proportion to the
@@ -229,6 +218,13 @@ no useful associative accumulator. Without the third regime that class had no re
 since such an operator has no accumulation quantum either. What the tolerance must not become is a place to
 hide an insufficient halo, which is why it is a stated function of the neighbourhood size rather than a
 constant: an inadequate width produces a difference that does not scale that way.
+
+The prohibition on the attribute reaching a final output was measured to be the one obligation in (1) that a
+plausible implementation simply does not meet. Exercised against a halo-bearing source, the attribute arrived
+at the caller together with the halo rows, under a halo-removal stage that was installed and one that was not
+— because the two failures are independent. Removal is about rows, and the attribute is a column; (5) is
+explicit that it retains what it keeps. So satisfying the bullet needs a projection, and (6) needs a check that
+looks at the output rather than at what ran.
 
 (1)'s ordering bullet exists to make (5) achievable, and the obligation is on the batch *handed to an
 operator* rather than on every batch in existence, because the stage that assembles a partition is the one
