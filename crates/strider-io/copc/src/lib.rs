@@ -60,7 +60,7 @@ pub mod source;
 pub use copc::{Entry, Hierarchy, Info, Node, VoxelKey};
 pub use error::{Error, Result};
 pub use las::{Header, Transform};
-pub use source::{Open, Source};
+pub use source::{Decoder, Open, Source};
 
 // Re-exported for convenience, and defined in `strider-core`: the port is the model's,
 // not this adapter's ([[RFC-0004:C-HOST]] 2).

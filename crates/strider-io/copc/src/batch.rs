@@ -31,7 +31,7 @@ use laz::LazVlr;
 
 use crate::copc::Node;
 use crate::error::{Error, Result};
-use crate::source::Source;
+use crate::source::{Decoder, Source};
 
 /// Name of the coordinate field. One field, three children.
 pub const POSITION: &str = "position";
@@ -52,7 +52,7 @@ mod at {
     pub const RGB: usize = 30;
 }
 
-impl Source {
+impl Decoder {
     /// The schema every batch from this source carries.
     ///
     /// Derived from the source rather than fixed, because the attributes present depend
@@ -89,7 +89,7 @@ impl Source {
     /// buffer it was handed, which is what makes this callable from a host that has no
     /// filesystem ([[RFC-0004:C-HOST]] 1).
     pub fn decode(&self, node: &Node, bytes: &[u8]) -> Result<RecordBatch> {
-        let vlr = LazVlr::from_buffer(self.laz_vlr_bytes())?;
+        let vlr = LazVlr::from_buffer(self.laz_vlr.as_slice())?;
         let record_len = self.header().point_record_len as usize;
         let n = node.point_count as usize;
 
@@ -189,6 +189,19 @@ impl Source {
         }
 
         Ok(RecordBatch::try_new(self.schema(), columns)?)
+    }
+}
+
+impl Source {
+    /// Delegates to a [`Decoder`], for a caller that has the whole source in hand.
+    pub fn schema(&self) -> SchemaRef {
+        self.decoder().schema()
+    }
+
+    /// Delegates to a [`Decoder`]. A host with worker threads should take one `decoder()` and
+    /// share that instead, so the index stays mutable — see [`Source::decoder`].
+    pub fn decode(&self, node: &Node, bytes: &[u8]) -> Result<RecordBatch> {
+        self.decoder().decode(node, bytes)
     }
 }
 

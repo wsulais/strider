@@ -138,6 +138,44 @@ impl Open {
     }
 }
 
+/// Everything needed to turn a node's bytes into a batch, and nothing else.
+///
+/// `Clone` is cheap: the LASzip record is shared, and the rest is a few hundred bytes. A host
+/// hands one of these to each worker and keeps the [`Source`] — and therefore the index —
+/// to itself.
+#[derive(Clone, Debug)]
+pub struct Decoder {
+    pub(crate) header: Header,
+    pub(crate) laz_vlr: std::sync::Arc<Vec<u8>>,
+    pub(crate) crs: Crs,
+}
+
+impl Decoder {
+    pub fn header(&self) -> &Header {
+        &self.header
+    }
+
+    /// Opaque, as [[RFC-0005:C-CRS]] 2 requires.
+    pub fn crs(&self) -> &Crs {
+        &self.crs
+    }
+
+    /// Field metadata for the coordinate field: the system, and no edge interpretation.
+    ///
+    /// [[RFC-0005:C-CRS]] 4 names `edges` as one of the three things to carry, and the
+    /// conformant value here is its absence. GeoArrow's `edges` says how to interpolate
+    /// *between* two vertices, and points have no edges — every variant the vocabulary offers
+    /// (spherical, Karney, Andoyer, Thomas) is a path formula. Absent is the statement, not
+    /// an omission.
+    pub(crate) fn geo_metadata(&self) -> Arc<Metadata> {
+        Arc::new(Metadata::new(self.crs.clone(), None))
+    }
+}
+
+fn alloc_shared(bytes: &[u8]) -> std::sync::Arc<Vec<u8>> {
+    std::sync::Arc::new(bytes.to_vec())
+}
+
 /// An open COPC source: its header, its index, and its coordinate reference system.
 ///
 /// Holds no points and no handle to anything. Every method either answers from the
@@ -241,18 +279,24 @@ impl Source {
         self.hierarchy.nodes().iter().find(|n| n.key == key)
     }
 
-    pub(crate) fn laz_vlr_bytes(&self) -> &[u8] {
-        &self.laz_vlr
+    /// A cheap, shareable snapshot of everything decoding needs.
+    ///
+    /// This split exists because of a bug that was invisible until a viewport had holes in
+    /// it. Handing worker threads the whole `Source` meant the host could not take a
+    /// mutable borrow of it to fold in newly read hierarchy pages, so paging starved
+    /// whenever a read was in flight — which, in a frame loop, is almost always. Deeper
+    /// nodes were therefore never *known to exist*, and the renderer cannot request a
+    /// partition the index has never heard of.
+    ///
+    /// The two halves have genuinely different lifetimes: the index grows as pages arrive,
+    /// while what decoding needs — the header, the LASzip record, the coordinate reference
+    /// system — is fixed the moment the source is open.
+    pub fn decoder(&self) -> Decoder {
+        Decoder {
+            header: self.header,
+            laz_vlr: alloc_shared(&self.laz_vlr),
+            crs: self.crs.clone(),
+        }
     }
 
-    /// Field metadata for the coordinate field: the system, and no edge interpretation.
-    ///
-    /// [[RFC-0005:C-CRS]] 4 names `edges` as one of the three things to carry, and the
-    /// conformant value here is its absence. GeoArrow's `edges` says how to interpolate
-    /// *between* two vertices, and points have no edges — every variant the vocabulary
-    /// offers (spherical, Karney, Andoyer, Thomas) is a path formula. Absent is
-    /// therefore the statement, not an omission.
-    pub(crate) fn geo_metadata(&self) -> Arc<Metadata> {
-        Arc::new(Metadata::new(self.crs.clone(), None))
-    }
 }

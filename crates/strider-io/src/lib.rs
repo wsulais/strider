@@ -57,7 +57,7 @@ pub use strider_io_copc as copc;
 /// these go away and callers name the format, because `strider_io::Source` would then be
 /// ambiguous about which format's source it is.
 #[cfg(feature = "copc")]
-pub use strider_io_copc::{Open, Source};
+pub use strider_io_copc::{Decoder, Open, Source};
 
 /// Every enabled adapter, for a build that wants to report what it can read.
 ///
