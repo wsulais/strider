@@ -15,6 +15,9 @@ repository.workspace = true
 description = "The document, its edits, and the metadata-only extract a renderer reads"
 
 [dependencies]
+# Operators. Normals are computed as a batch is decoded, so the shade is ready before the
+# renderer ever asks for it.
+strider-algo = { path = "../strider-algo" }
 # The renderer's vocabulary: what an extract must produce for `advance` to consume.
 strider-view = { path = "../strider-view" }
 # Exercised as a consumer would, through the facade rather than the adapter.

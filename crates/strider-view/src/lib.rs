@@ -1,29 +1,55 @@
 // SPDX-FileCopyrightText: 2026 Strider contributors
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-//! Rendering: the namespace crate.
+//! The renderer: a pure step function over a derived snapshot.
 //!
-//! Re-exports and nothing else. The renderer is [`strider_view_core`], always present and
-//! dependency-free; a backend that can put its output on a device is opt-in behind a feature.
+//! Promoted from `prototypes/PROTOTYPE-renderer-host/render-core`, which existed to answer one
+//! question — **can the renderer be what its clauses describe?** Every clause pushes it towards
+//! a step function and none of them says what the resulting shape is:
 //!
-//! ```text
-//! strider-view            this crate — re-exports, declares the default set
-//! strider-view-core       the renderer: a step function, no_std, zero dependencies
-//! strider-view-wgpu       a backend: wgpu, WGSL, and per-provider interop  (feature "wgpu")
-//! ```
+//! * It may not own a thread, block on presentation, or block on device work
+//!   ([[RFC-0006:C-SURFACE]] 3, [[RFC-0004:C-HOST]] 3 and 4).
+//! * Frame scheduling belongs to the host ([[RFC-0006:C-RENDER]] 4).
+//! * Its data requests must be cancellable, and cancellation must take effect *without waiting
+//!   for already-dispatched work* ([[RFC-0006:C-RENDER]] 2).
+//! * It reads a derived snapshot, never the document graph ([[RFC-0007:C-EXTRACT]] 1 to 3), and
+//!   that snapshot is metadata only ([[RFC-0007:C-EXTRACT]] 4).
+//! * Its state is retained across frames, not rebuilt ([[RFC-0007:C-INVALIDATION]] 1).
 //!
-//! # Why the default set is empty
+//! Taken together they leave exactly one shape: `advance(frame_no, &Snapshot) -> Frame`. The
+//! renderer computes; the host performs. It has no clock — the frame number arrives as an
+//! argument — no I/O, since retrieval is an *effect* the host executes, and no way to wait for
+//! anything.
 //!
-//! `strider-io` defaults to carrying an adapter, because a consumer asking for IO wants to read
-//! something. Rendering is not like that: a host computing a frame, or a test asserting on the
-//! renderer's effects, needs the model and no device at all. Defaulting to a backend would put
-//! wgpu beneath every dependent including those, so the backend is spelled rather than assumed.
+//! # `no_std` is the enforcement, not a preference
+//!
+//! With no `std` in scope there is no `thread::spawn` to call, no `Instant::now`, no `File`, and
+//! nothing to block on. The prohibitions above are **unreachable rather than merely unused**,
+//! which is what makes them true of every future edit and not just of the code as written.
+//!
+//! This crate therefore has **no dependencies at all**, and that is load-bearing:
+//! `GUARD-NO-TOOLKIT-UNDER-LIBRARY-CRATES` and `GUARD-NO-QUERY-ENGINE-UNDER-CORE` both walk
+//! `strider-view`'s dependency tree, and a tree that is a single node cannot contain a toolkit
+//! or a query engine. Keep it that way: anything needing an allocator, a device or a clock
+//! belongs in a crate *beneath* this one — `strider-view-wgpu` is the first of them.
 
-#![forbid(unsafe_code)]
+#![no_std]
 
-pub use strider_view_core::*;
+extern crate alloc;
 
-/// The GPU backend: wgpu, the WGSL point pipeline, colour ramps, and the provider-specific
-/// interop a host needs to share a device or a texture with a toolkit.
-#[cfg(feature = "wgpu")]
-pub use strider_view_wgpu as wgpu;
+mod raster;
+mod snapshot;
+mod state;
+
+pub use raster::{
+    AnchorVerdict, DrawnAnchor, Raster, UploadToken, Uploads, Vertex, CHANNELS, HIDE, KEEP,
+    RECLASS,
+};
+pub use snapshot::{
+    Anchor, EditAction, EditDigest, EditRef, Lod, PartitionId, PipelineResultRef, Snapshot, View,
+    VisiblePartition,
+};
+pub use state::{
+    Budget, CancelReason, Delivery, Draw, Effect, Frame, Freshness, Presentation, RenderState,
+    RequestId, Stats, SurfaceHandle, Target,
+};

@@ -37,6 +37,9 @@ struct PointIn {
     // carries — an attribute read from the file, or one an analytical pass computed — and
     // says which index to ramp. Naming them here would put LAS inside the renderer.
     @location(3) channels: vec4<f32>,
+    // The fifth channel, alone because Vulkan has no five-component vertex format. Its meaning is
+    // as unknown here as the other four's.
+    @location(4) channel4: f32,
 };
 
 struct PointOut {
@@ -91,6 +94,7 @@ fn shade(in: PointIn) -> vec3<f32> {
     if cam.ramp_channel == 1u { value = in.channels[1]; }
     else if cam.ramp_channel == 2u { value = in.channels[2]; }
     else if cam.ramp_channel == 3u { value = in.channels[3]; }
+    else if cam.ramp_channel == 4u { value = in.channel4; }
     return textureSampleLevel(ramp_tex, ramp_smp, ramp_t(value), 0.0).rgb;
 }
 

@@ -1,6 +1,6 @@
 # The device half of the renderer.
 #
-# `strider-view-core` decides *what* to draw and owns the retained state; this crate does the
+# `strider-view` decides *what* to draw and owns the retained state; this crate does the
 # drawing. The split is not tidiness. C-SURFACE 3 and C-HOST 3 and 4 constrain the policy layer
 # hard enough that keeping it `no_std` and dependency-free is the only way to make the
 # prohibitions checkable, and a GPU backend can be neither of those things.
@@ -20,7 +20,7 @@ repository.workspace = true
 description = "The GPU backend: wgpu, a WGSL point pipeline, and per-provider interop"
 
 [dependencies]
-strider-view-core = { path = "../core" }
+strider-view = { path = ".." }
 wgpu = "29"
 bytemuck = { version = "1", features = ["derive"] }
 

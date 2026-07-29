@@ -3,14 +3,14 @@
 
 //! The device half of the renderer, on wgpu.
 //!
-//! `strider-view-core` decides what to draw, what to request, what to cancel and which points an
+//! `strider-view` decides what to draw, what to request, what to cancel and which points an
 //! edit hides. This crate turns that decision into draw calls. Two things are worth
 //! stating about the split, because both are clause-shaped:
 //!
 //! * **The device layer holds no policy.** It is handed a list of buffers and a camera and
 //!   it rasterises them. It cannot request a partition, cannot evict one, and has never
 //!   heard of an edit — the host uploads vertices whose classification already reflects the
-//!   effective edit set, so the gesture model stops at `strider-view-core`.
+//!   effective edit set, so the gesture model stops at `strider-view`.
 //! * **The depth test is real.** [[RFC-0006:C-OVERLAY]] 1 requires depth-dependent content
 //!   to be drawn by the renderer, and here an anchor is a billboard rasterised against the
 //!   same depth buffer the cloud wrote. Occlusion is a `<` in hardware, not a decision
@@ -42,11 +42,11 @@ pub mod metal;
 pub use ramp::{Ramp, Shading, RAMP_TEXELS};
 
 use bytemuck::{Pod, Zeroable};
-use strider_view_core::{Draw, Vertex};
+use strider_view::{Draw, Vertex};
 use std::collections::BTreeMap;
 use wgpu::util::DeviceExt;
 
-/// One point as the device sees it. `strider_view_core::Vertex` cannot derive `Pod`, being in a
+/// One point as the device sees it. `strider_view::Vertex` cannot derive `Pod`, being in a
 /// crate with no dependencies, so the conversion happens once at upload.
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -54,7 +54,7 @@ struct GpuVertex {
     pos: [f32; 3],
     class: u32,
     rgb: [f32; 3],
-    channels: [f32; strider_view_core::CHANNELS],
+    channels: [f32; strider_view::CHANNELS],
 }
 
 // The stride, asserted, because I have now made the same mistake twice in one sitting.
@@ -67,8 +67,20 @@ struct GpuVertex {
 //
 // This assertion does not catch a reordering, but it does catch the thing that actually
 // happened: a field added or removed without the attribute list being updated to match.
+// The vertex attribute list and the WGSL entry point both spell out the channel block by hand,
+// and neither is derived from `CHANNELS`. So changing `CHANNELS` alone produces a buffer the
+// shader reads only part of — silently, because wgpu does not reject a short read and the missing
+// attribute comes back as zero. That is not a hypothetical: this exact class of bug has rendered
+// every point black once and flattened the ramp once.
 const _: () = assert!(
-    core::mem::size_of::<GpuVertex>() == 12 + 4 + 12 + 4 * strider_view_core::CHANNELS,
+    strider_view::CHANNELS == 5,
+    "CHANNELS changed. Update BOTH the `vertex_attr_array!` in the points pipeline (a vec4 plus \
+     one scalar per extra channel — Vulkan has no wider vertex format) and `points.wgsl`'s \
+     channel locations and `shade()` selector, then update this assertion."
+);
+
+const _: () = assert!(
+    core::mem::size_of::<GpuVertex>() == 12 + 4 + 12 + 4 * strider_view::CHANNELS,
     "GpuVertex has padding or an unaccounted field; the shader's @location numbering \
      will be off by one from this struct's field order"
 );
@@ -504,8 +516,13 @@ impl Gpu {
                     // failing, which is how every point once rendered black.
                     // One entry per field of `GpuVertex`, in field order, and nothing else —
                     // see the assertion beside that struct.
+                    // The channel block is a `vec4` plus a scalar because Vulkan has no
+                    // five-component vertex format. Both halves must be declared, and the
+                    // assertion below fails the build if `CHANNELS` moves without this list —
+                    // which is the third time this layout has needed defending, the previous two
+                    // being a padding float and a flat ramp.
                     attributes: &wgpu::vertex_attr_array![
-                        0 => Float32x3, 1 => Uint32, 2 => Float32x3, 3 => Float32x4
+                        0 => Float32x3, 1 => Uint32, 2 => Float32x3, 3 => Float32x4, 4 => Float32
                     ],
                 }],
             },
@@ -602,7 +619,7 @@ impl Gpu {
     }
 
     /// Perform an upload the renderer asked the host for. Returns the token
-    /// `strider-view-core` will hold — it never sees the buffer.
+    /// `strider-view` will hold — it never sees the buffer.
     pub fn upload(&mut self, verts: &[Vertex]) -> u64 {
         let gpu: Vec<GpuVertex> = verts
             .iter()
@@ -770,7 +787,7 @@ impl Gpu {
 
     /// Draw one frame.
     ///
-    /// `draws` is `strider-view-core`'s decision, unchanged: which partition, at which level,
+    /// `draws` is `strider-view`'s decision, unchanged: which partition, at which level,
     /// from which buffer. This function adds no policy — it does not choose what to draw,
     /// and it has no way to ask for anything it was not given.
     #[allow(clippy::too_many_arguments)]

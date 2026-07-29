@@ -48,7 +48,7 @@ pub struct Vertex {
 /// Four is a budget, not a semantic claim: it costs 16 bytes a point and covers the
 /// attributes a viewer offers at once. A host wanting a fifth swaps one out, which is a
 /// re-upload and not a shader change.
-pub const CHANNELS: usize = 4;
+pub const CHANNELS: usize = 5;
 
 /// A handle to device memory the host owns and the renderer does not.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]

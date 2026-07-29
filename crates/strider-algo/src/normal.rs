@@ -75,24 +75,26 @@ impl Normals {
     /// some other partition's core point and that partition has neighbours for it that this one
     /// does not ([[RFC-0002:C-HALO]] 1).
     pub fn estimate(&self, all: &[[f64; 3]], core: &[usize]) -> Vec<Normal> {
-        core.iter().map(|&i| self.at(all, i)).collect()
+        let grid = CellGrid::build(all, self.radius);
+        core.iter().map(|&i| self.at(all, &grid, i)).collect()
     }
 
-    fn at(&self, all: &[[f64; 3]], i: usize) -> Normal {
+    fn at(&self, all: &[[f64; 3]], grid: &CellGrid, i: usize) -> Normal {
         let p = all[i];
         let r2 = self.radius * self.radius;
 
-        // Nearest-first within the radius. A linear scan: this is the reference implementation,
-        // and a spatial index is an optimisation that must produce the same answer, which is
-        // easier to assert against something obviously correct.
-        let mut near: Vec<(f64, usize)> = all
-            .iter()
-            .enumerate()
-            .filter_map(|(j, q)| {
-                let d2 = sq_dist(p, *q);
-                (d2 <= r2).then_some((d2, j))
-            })
-            .collect();
+        // Candidates from the 27 cells touching this point's own. The cell side IS the radius,
+        // so nothing within the radius can lie outside that block — the index changes which
+        // points are *examined*, never which are *accepted*, and the answer is identical to a
+        // scan of everything. That identity is what `conformance_halo` is checking, so it has to
+        // be exact rather than approximately right.
+        let mut near: Vec<(f64, usize)> = Vec::new();
+        grid.for_each_near(p, |j| {
+            let d2 = sq_dist(p, all[j]);
+            if d2 <= r2 {
+                near.push((d2, j));
+            }
+        });
         near.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(core::cmp::Ordering::Equal));
         near.truncate(self.max_neighbours.max(3));
 
@@ -214,4 +216,101 @@ pub fn hillshade(normal: Normal, azimuth_deg: f64, altitude_deg: f64) -> f32 {
     ];
     let dot = n[0] * light[0] + n[1] * light[1] + n[2] * light[2];
     dot.clamp(0.0, 1.0) as f32
+}
+
+
+/// A uniform bucket grid with a cell side of one search radius.
+///
+/// Not an approximation. With the side equal to the radius, every point within the radius of `p`
+/// lies in `p`'s own cell or one of the 26 touching it, so scanning that block examines a
+/// superset of the answer and the distance test does the rest. What it removes is the quadratic
+/// scan, which on a 30,000-point octree node is 900 million distance computations — enough to
+/// make normals unusable at load time, which is where they have to be computed.
+struct CellGrid {
+    side: f64,
+    origin: [f64; 3],
+    dims: [i64; 3],
+    /// Cell index to the points in it, as a CSR-style pair so building costs two passes and no
+    /// per-cell allocation.
+    starts: Vec<u32>,
+    items: Vec<u32>,
+}
+
+impl CellGrid {
+    fn build(pts: &[[f64; 3]], side: f64) -> Self {
+        let side = if side > 0.0 { side } else { 1.0 };
+        let mut lo = [f64::INFINITY; 3];
+        let mut hi = [f64::NEG_INFINITY; 3];
+        for p in pts {
+            for k in 0..3 {
+                lo[k] = lo[k].min(p[k]);
+                hi[k] = hi[k].max(p[k]);
+            }
+        }
+        if !lo[0].is_finite() {
+            lo = [0.0; 3];
+            hi = [0.0; 3];
+        }
+        let dims = [
+            (((hi[0] - lo[0]) / side).floor() as i64 + 1).max(1),
+            (((hi[1] - lo[1]) / side).floor() as i64 + 1).max(1),
+            (((hi[2] - lo[2]) / side).floor() as i64 + 1).max(1),
+        ];
+        let ncells = (dims[0] * dims[1] * dims[2]) as usize;
+
+        let cell_of = |p: [f64; 3]| -> usize {
+            let c = [
+                (((p[0] - lo[0]) / side).floor() as i64).clamp(0, dims[0] - 1),
+                (((p[1] - lo[1]) / side).floor() as i64).clamp(0, dims[1] - 1),
+                (((p[2] - lo[2]) / side).floor() as i64).clamp(0, dims[2] - 1),
+            ];
+            (c[0] + dims[0] * (c[1] + dims[1] * c[2])) as usize
+        };
+
+        let mut counts = vec![0u32; ncells + 1];
+        for p in pts {
+            counts[cell_of(*p) + 1] += 1;
+        }
+        for i in 0..ncells {
+            counts[i + 1] += counts[i];
+        }
+        let starts = counts.clone();
+        let mut cursor = counts;
+        let mut items = vec![0u32; pts.len()];
+        for (i, p) in pts.iter().enumerate() {
+            let c = cell_of(*p);
+            items[cursor[c] as usize] = i as u32;
+            cursor[c] += 1;
+        }
+        Self {
+            side,
+            origin: lo,
+            dims,
+            starts,
+            items,
+        }
+    }
+
+    fn for_each_near(&self, p: [f64; 3], mut f: impl FnMut(usize)) {
+        let base = [
+            (((p[0] - self.origin[0]) / self.side).floor() as i64).clamp(0, self.dims[0] - 1),
+            (((p[1] - self.origin[1]) / self.side).floor() as i64).clamp(0, self.dims[1] - 1),
+            (((p[2] - self.origin[2]) / self.side).floor() as i64).clamp(0, self.dims[2] - 1),
+        ];
+        for dz in -1..=1i64 {
+            for dy in -1..=1i64 {
+                for dx in -1..=1i64 {
+                    let c = [base[0] + dx, base[1] + dy, base[2] + dz];
+                    if (0..3).any(|k| c[k] < 0 || c[k] >= self.dims[k]) {
+                        continue;
+                    }
+                    let idx = (c[0] + self.dims[0] * (c[1] + self.dims[1] * c[2])) as usize;
+                    let (a, b) = (self.starts[idx] as usize, self.starts[idx + 1] as usize);
+                    for &j in &self.items[a..b] {
+                        f(j as usize);
+                    }
+                }
+            }
+        }
+    }
 }

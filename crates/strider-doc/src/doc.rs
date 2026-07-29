@@ -576,6 +576,31 @@ pub fn to_vertices(batch: &RecordBatch, origin: [f64; 3]) -> Vec<Vertex> {
         c.as_ref().map(|c| c.value(i) as f32 / scale).unwrap_or(0.0)
     };
 
+    // Normals, then a shade from them, filled into a channel like any other.
+    //
+    // Computed HERE, once per batch as it is decoded, and not in the frame path. An operator is
+    // not a per-frame cost: the points do not move, so neither do their normals, and recomputing
+    // them each frame would put an O(n) neighbourhood search inside a 16 ms budget for an answer
+    // that never changes.
+    //
+    // The radius is the operator's declared halo, and this call site does NOT supply one — every
+    // point in the batch is treated as core with no neighbours beyond it. That is honest for a
+    // preview and wrong at the batch's edges by exactly the amount C-HALO predicts; wiring the
+    // planner to deliver a grown batch is what closes it, and `conformance_halo` already proves
+    // the operator is correct once it does.
+    let positions: Vec<[f64; 3]> = (0..batch.num_rows())
+        .map(|i| [x.value(i), y.value(i), z.value(i)])
+        .collect();
+    let all: Vec<usize> = (0..positions.len()).collect();
+    let shades: Vec<f32> = strider_algo::Normals {
+        radius: NORMAL_RADIUS,
+        max_neighbours: 8,
+    }
+    .estimate(&positions, &all)
+    .into_iter()
+    .map(|n| strider_algo::hillshade(n, 315.0, 45.0))
+    .collect();
+
     (0..batch.num_rows())
         .map(|i| Vertex {
             x: (x.value(i) - origin[0]) as f32,
@@ -591,6 +616,7 @@ pub fn to_vertices(batch: &RecordBatch, origin: [f64; 3]) -> Vec<Vertex> {
                 intensity.as_ref().map(|c| c.value(i)).unwrap_or(0) as f32,
                 nret.as_ref().map(|c| c.value(i)).unwrap_or(1) as f32,
                 ret.as_ref().map(|c| c.value(i)).unwrap_or(1) as f32,
+                shades[i],
             ],
         })
         .collect()
@@ -598,8 +624,20 @@ pub fn to_vertices(batch: &RecordBatch, origin: [f64; 3]) -> Vec<Vertex> {
 
 /// What this host put in each channel. Published for the interface to label; the renderer
 /// has no equivalent and needs none.
-pub const CHANNEL_LABELS: [&str; strider_view::CHANNELS] =
-    ["height", "intensity", "number of returns", "return number"];
+pub const CHANNEL_LABELS: [&str; strider_view::CHANNELS] = [
+    "height",
+    "intensity",
+    "number of returns",
+    "return number",
+    "hillshade",
+];
+
+/// The neighbourhood radius normal estimation declares, in CRS units.
+///
+/// A property of the cloud's density rather than of the algorithm (ADR-0025), so there is no
+/// defensible default and this one is chosen for the aerial LiDAR the prototype reads — roughly
+/// a metre, which spans several returns at that spacing without flattening real relief.
+const NORMAL_RADIUS: f64 = 1.0;
 
 /// The range each channel spans, and the source's colour availability.
 ///
