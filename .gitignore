@@ -74,3 +74,9 @@ result*/
 # enters this project's history or its dependency graph. Each carries a NOTES.md
 # stating the question it answered and how to delete it.
 prototypes/
+
+# Machine-local tool state. Caches and task queues belonging to editor/agent tooling,
+# not to this project: they are per-checkout, per-machine, and carry no history worth
+# keeping.
+.indxr-cache/
+.pi/
