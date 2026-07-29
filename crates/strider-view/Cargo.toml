@@ -1,0 +1,43 @@
+# The namespace crate. Owns no rendering: it vendors the renderer and its backends.
+#
+# Same shape as `strider-io`, and for the same two reasons — it is where the **default set** is
+# declared, and it is one dependency line instead of one per backend. As there, behaviour must
+# not accumulate here: this crate re-exports and nothing else, which is what keeps "which crate
+# is this bug in?" answerable.
+#
+# It exists under this exact name because two guards already name it —
+# `GUARD-NO-TOOLKIT-UNDER-LIBRARY-CRATES` and `GUARD-NO-QUERY-ENGINE-UNDER-CORE` both run
+# `cargo tree -p strider-view`. Until this crate existed those greps found no tree and passed
+# **vacuously**: they reported success about a crate that was not there.
+[package]
+name = "strider-view"
+version = "0.0.0"
+publish = false
+edition.workspace = true
+rust-version.workspace = true
+# Library crate — permissive per [[RFC-0001:C-LICENSE]] (1).
+license.workspace = true
+repository.workspace = true
+description = "Rendering: the namespace crate"
+
+[features]
+# Empty by default, which is the opposite of `strider-io`'s choice and deliberate.
+#
+# `strider-io`'s default carries an adapter because a consumer asking for IO always wants to read
+# *something*. A consumer asking for `strider-view` may only want the renderer's types — a host
+# computing a frame, a test asserting on `Effect`s — and pulling a GPU stack in for that would
+# put wgpu beneath every dependent, including ones that never draw.
+#
+# So the backend is opt-in and the core is always present. `strider-app` enables what it needs.
+default = []
+wgpu = ["dep:strider-view-wgpu"]
+
+[dependencies]
+# Always. The renderer is the point of the crate; the backends are how it reaches a screen.
+strider-view-core = { path = "core" }
+
+# The GPU backend, behind the feature above.
+strider-view-wgpu = { path = "wgpu", optional = true }
+
+[lints]
+workspace = true

@@ -1,0 +1,23 @@
+# The renderer itself: the part with no device, no toolkit and no clock.
+#
+# Separate from the `strider-view` facade for the reason `strider-io` states about its own
+# facade — a namespace crate re-exports and nothing else, so anything that *does something*
+# lives in a sibling. Here the sibling relationship is not "one per format" but "the model, and
+# the backends that draw it".
+[package]
+name = "strider-view-core"
+version = "0.0.0"
+publish = false
+edition.workspace = true
+rust-version.workspace = true
+# Library crate — permissive per [[RFC-0001:C-LICENSE]] (1).
+license.workspace = true
+repository.workspace = true
+description = "The renderer as a pure step function: no device, no toolkit, no clock"
+
+# Deliberately empty, and checked by the two guards that walk `strider-view`'s tree. A dependency
+# added here is a dependency added beneath the renderer; see the crate docs before adding one.
+[dependencies]
+
+[lints]
+workspace = true

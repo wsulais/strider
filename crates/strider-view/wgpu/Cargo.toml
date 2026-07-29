@@ -1,0 +1,44 @@
+# The device half of the renderer.
+#
+# `strider-view-core` decides *what* to draw and owns the retained state; this crate does the
+# drawing. The split is not tidiness. C-SURFACE 3 and C-HOST 3 and 4 constrain the policy layer
+# hard enough that keeping it `no_std` and dependency-free is the only way to make the
+# prohibitions checkable, and a GPU backend can be neither of those things.
+#
+# wgpu is `MIT OR Apache-2.0`, so it is admissible beneath a library crate under
+# [[RFC-0001:C-LICENSE]] 4 — unlike Qt, which is why [[ADR-0009]] puts the toolkit in the
+# application and wgpu here.
+[package]
+name = "strider-view-wgpu"
+version = "0.0.0"
+publish = false
+edition.workspace = true
+rust-version.workspace = true
+# Library crate — permissive per [[RFC-0001:C-LICENSE]] (1).
+license.workspace = true
+repository.workspace = true
+description = "The GPU backend: wgpu, a WGSL point pipeline, and per-provider interop"
+
+[dependencies]
+strider-view-core = { path = "../core" }
+wgpu = "29"
+bytemuck = { version = "1", features = ["derive"] }
+
+# The vocabulary for "a native surface handle my host gave me" ([[RFC-0006:C-SURFACE]] 1).
+#
+# Note what this crate does NOT depend on: any windowing library. It is handed pointers and an
+# integer; it cannot create a window ([[RFC-0006:C-SURFACE]] 2) and has no idea Qt exists
+# ([[RFC-0006:C-TOOLKIT]] 2).
+raw-window-handle = "0.6"
+
+# Only for `vk::Handle::as_raw`, so Vulkan objects can cross to a host as integers. Pinned to
+# what wgpu-hal 29 itself uses — a different major would make these different types and the
+# handles would not convert.
+#
+# Target-gated for the same reason `src/vulkan.rs` is: wgpu has no Vulkan backend on an Apple
+# target, so there are no Vulkan handles to convert and nothing here to link.
+[target.'cfg(not(target_vendor = "apple"))'.dependencies]
+ash = "0.38"
+
+[lints]
+workspace = true

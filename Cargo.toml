@@ -10,7 +10,9 @@ members = [
     "crates/strider-io",
     "crates/strider-io/copc",
     # "crates/strider-algo",
-    # "crates/strider-view",
+    "crates/strider-view",
+    "crates/strider-view/core",
+    "crates/strider-view/wgpu",
     # Application — AGPL-3.0-or-later ([[RFC-0001:C-LICENSE]] 2). Declares its own
     # `license` rather than inheriting from [workspace.package].
     # "crates/strider-app",
